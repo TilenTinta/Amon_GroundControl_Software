@@ -1,0 +1,15 @@
+# ignore directories
+node_modules/
+Data/
+**/node_modules/
+
+# binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.bin
+
+# Electron and large files
+**/electron/dist/
+**/electron.exe

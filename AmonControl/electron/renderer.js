@@ -36,12 +36,12 @@ const fields = {
   climbRate: document.getElementById("climbRate"),
   heading: document.getElementById("heading"),
   mode: document.getElementById("mode"),
-  linkQuality: document.getElementById("linkQuality"),
-  linkLatency: document.getElementById("linkLatency"),
-  packetLoss: document.getElementById("packetLoss"),
-  tvcX: document.getElementById("tvcX"),
-  tvcY: document.getElementById("tvcY"),
-  tvcZ: document.getElementById("tvcZ"),
+  tvcXp: document.getElementById("tvcXp"),
+  tvcXn: document.getElementById("tvcXn"),
+  tvcYp: document.getElementById("tvcYp"),
+  tvcYn: document.getElementById("tvcYn"),
+  tvcZp: document.getElementById("tvcZp"),
+  tvcZn: document.getElementById("tvcZn"),
   throttleValue: document.getElementById("throttleValue"),
   posX: document.getElementById("posX"),
   posY: document.getElementById("posY"),
@@ -49,32 +49,136 @@ const fields = {
   velX: document.getElementById("velX"),
   velY: document.getElementById("velY"),
   velZ: document.getElementById("velZ"),
+  velXs: document.getElementById("velXs"),
+  velYs: document.getElementById("velYs"),
+  velZs: document.getElementById("velZs"),
+  velX2: document.getElementById("velX2"),
+  velY2: document.getElementById("velY2"),
+  velZ2: document.getElementById("velZ2"),
   accX: document.getElementById("accX"),
   accY: document.getElementById("accY"),
   accZ: document.getElementById("accZ"),
+  gyroX: document.getElementById("gyroX"),
+  gyroY: document.getElementById("gyroY"),
+  gyroZ: document.getElementById("gyroZ"),
+  tN: document.getElementById("tN"),
+  tM: document.getElementById("tM"),
+  posXs: document.getElementById("posXs"),
+  posYs: document.getElementById("posYs"),
+  posZs: document.getElementById("posZs"),
+  gFx: document.getElementById("gFx"),
+  gSt: document.getElementById("gSt"),
+  fP: document.getElementById("fP"),
+  bPs: document.getElementById("bPs"),
+  tP: document.getElementById("tP"),
+  bAt: document.getElementById("bAt"),
+  uD: document.getElementById("uD"),
+  mS: document.getElementById("mS"),
+  ign: document.getElementById("ign"),
+  state: document.getElementById("state"),
   clockLocal: document.getElementById("clockLocal"),
   clockMission: document.getElementById("clockMission"),
 };
 
 const chartConfig = [
-  { id: "chartGyro", color: "#3fd2b6" },
-  { id: "chartAccel", color: "#6ed9ff" },
-  { id: "chartOriX", color: "#f2b96d" },
-  { id: "chartOriY", color: "#f06d6d" },
-  { id: "chartOriZ", color: "#caa7ff" },
-  { id: "chartAlt", color: "#3fd2b6" },
-  { id: "chartPos", color: "#6ed9ff" },
-  { id: "chartVel", color: "#f2b96d" },
-  { id: "chartThrottle", color: "#3fd2b6" },
+  {
+    id: "chartGyro",
+    yLabel: "deg/s",
+    xLabel: "time (s)",
+    series: [
+      { key: "gx", color: "#f06d6d" },
+      { key: "gy", color: "#3fd2b6" },
+      { key: "gz", color: "#f2b96d" },
+    ],
+  },
+  {
+    id: "chartAccel",
+    yLabel: "m/s2",
+    xLabel: "time (s)",
+    series: [
+      { key: "ax", color: "#6ed9ff" },
+      { key: "ay", color: "#caa7ff" },
+      { key: "az", color: "#3fd2b6" },
+    ],
+  },
+  {
+    id: "chartOriX",
+    yLabel: "deg",
+    xLabel: "time (s)",
+    series: [
+      { key: "oriX", color: "#f2b96d" },
+      { key: "oriXRef", color: "#8a96a8" },
+    ],
+  },
+  {
+    id: "chartOriY",
+    yLabel: "deg",
+    xLabel: "time (s)",
+    series: [
+      { key: "oriY", color: "#4dd6a3" },
+      { key: "oriYRef", color: "#8a96a8" },
+    ],
+  },
+  {
+    id: "chartOriZ",
+    yLabel: "deg",
+    xLabel: "time (s)",
+    series: [
+      { key: "oriZ", color: "#63e0ff" },
+      { key: "oriZRef", color: "#8a96a8" },
+    ],
+  },
+  {
+    id: "chartAlt",
+    yLabel: "m",
+    xLabel: "time (s)",
+    series: [
+      { key: "alt", color: "#3fd2b6" },
+      { key: "altRef", color: "#8a96a8" },
+    ],
+  },
+  {
+    id: "chartPos",
+    yLabel: "m",
+    xLabel: "time (s)",
+    series: [
+      { key: "posX", color: "#f06d6d" },
+      { key: "posY", color: "#6ed9ff" },
+      { key: "posRef", color: "#8a96a8" },
+    ],
+  },
+  {
+    id: "chartVel",
+    yLabel: "m/s",
+    xLabel: "time (s)",
+    series: [
+      { key: "velX", color: "#f2b96d" },
+      { key: "velY", color: "#4dd6a3" },
+      { key: "velRef", color: "#8a96a8" },
+    ],
+  },
+  {
+    id: "chartThrottle",
+    yLabel: "%",
+    xLabel: "time (s)",
+    series: [
+      { key: "thr", color: "#3fd2b6" },
+      { key: "thrRef", color: "#8a96a8" },
+    ],
+  },
 ];
 
 const charts = {};
+const CHART_HZ = 50;
+const CHART_INTERVAL_MS = Math.round(1000 / CHART_HZ);
+const CHART_DT = 1 / CHART_HZ;
 let activeDrone = "amon";
 let missionStart = 0;
 let missionElapsed = 0;
 let missionRunning = false;
 let connectedPort = "";
 let orientation = { roll: 0, pitch: 0, yaw: 0 };
+let simTime = 0;
 
 let scene = null;
 let camera = null;
@@ -128,6 +232,7 @@ function setDrone(drone) {
   appRoot.dataset.view = "telemetry";
   resetMission();
   loadModel(drone);
+  resizeThree();
 
   if (drone === "talon") {
     droneLogo.src = "../../Images/FLIGHTORY_logo.png";
@@ -243,12 +348,36 @@ function zeroTelemetry() {
     velocity: { vx: 0, vy: 0, vz: 0 },
     position: { x: 0, y: 0, z: 0 },
     accel: { ax: 0, ay: 0, az: 0 },
+    gyro: { gx: 0, gy: 0, gz: 0 },
     throttle: 0,
     tvc: { x: 0, y: 0, z: 0 },
     link_quality: 0,
     link_latency: 0,
     packet_loss: 0,
     mode: "-",
+    raw: {
+      tN: 0,
+      tM: 0,
+      vXs: 0,
+      vYs: 0,
+      vZs: 0,
+      pXs: 0,
+      pYs: 0,
+      pZs: 0,
+      vX2: 0,
+      vY2: 0,
+      vZ2: 0,
+      gFx: 0,
+      gSt: 0,
+      fP: 0,
+      bPs: 0,
+      tP: 0,
+      bAt: 0,
+      uD: 0,
+      mS: 0,
+      ign: 0,
+      state: "--",
+    },
   };
 }
 
@@ -259,37 +388,66 @@ function format(value, decimals = 1) {
 function updateTelemetry(data) {
   const t = data || zeroTelemetry();
   orientation = { ...t.orientation };
-  fields.flightState.textContent = t.flight_state;
-  fields.battVoltage.textContent = `${format(t.battery_v, 2)} V`;
-  fields.signalDbm.textContent = `${format(t.signal_dbm, 0)} dBm`;
-  fields.tlmRate.textContent = `${format(t.tlm_rate, 2)} Hz`;
-  fields.gpsSat.textContent = `${t.gps_sat}`;
-  fields.imuTemp.textContent = `${format(t.imu_temp, 1)} C`;
-  fields.baroAlt.textContent = `${format(t.baro_alt, 1)} m`;
-  fields.rollVal.textContent = `${format(t.orientation.roll, 1)}`;
-  fields.pitchVal.textContent = `${format(t.orientation.pitch, 1)}`;
-  fields.yawVal.textContent = `${format(t.orientation.yaw, 1)}`;
+  if (fields.flightState) fields.flightState.textContent = t.flight_state;
+  if (fields.battVoltage) fields.battVoltage.textContent = `${format(t.battery_v, 2)} V`;
+  if (fields.signalDbm) fields.signalDbm.textContent = `${format(t.signal_dbm, 0)} dBm`;
+  if (fields.tlmRate) fields.tlmRate.textContent = `${format(t.tlm_rate, 2)} Hz`;
+  if (fields.gpsSat) fields.gpsSat.textContent = `${t.gps_sat}`;
+  if (fields.imuTemp) fields.imuTemp.textContent = `${format(t.imu_temp, 1)} C`;
+  if (fields.baroAlt) fields.baroAlt.textContent = `${format(t.baro_alt, 1)} m`;
+  if (fields.rollVal) fields.rollVal.textContent = `${format(t.orientation.roll, 1)} deg`;
+  if (fields.pitchVal) fields.pitchVal.textContent = `${format(t.orientation.pitch, 1)} deg`;
+  if (fields.yawVal) fields.yawVal.textContent = `${format(t.orientation.yaw, 1)} deg`;
   const groundSpeed = Math.hypot(t.velocity.vx, t.velocity.vy);
-  fields.groundSpeed.textContent = `${format(groundSpeed, 1)} m/s`;
-  fields.climbRate.textContent = `${format(t.velocity.vz, 2)} m/s`;
-  fields.heading.textContent = `${format(t.orientation.yaw, 1)} deg`;
-  fields.mode.textContent = t.mode;
-  fields.linkQuality.textContent = `${format(t.link_quality, 0)} %`;
-  fields.linkLatency.textContent = `${format(t.link_latency, 0)} ms`;
-  fields.packetLoss.textContent = `${format(t.packet_loss, 2)} %`;
-  fields.tvcX.textContent = `${format(t.tvc.x, 2)} deg`;
-  fields.tvcY.textContent = `${format(t.tvc.y, 2)} deg`;
-  fields.tvcZ.textContent = `${format(t.tvc.z, 2)} deg`;
-  fields.throttleValue.textContent = `${format(t.throttle, 0)} %`;
-  fields.posX.textContent = `${format(t.position.x, 2)} m`;
-  fields.posY.textContent = `${format(t.position.y, 2)} m`;
-  fields.posZ.textContent = `${format(t.position.z, 2)} m`;
-  fields.velX.textContent = `${format(t.velocity.vx, 2)} m/s`;
-  fields.velY.textContent = `${format(t.velocity.vy, 2)} m/s`;
-  fields.velZ.textContent = `${format(t.velocity.vz, 2)} m/s`;
-  fields.accX.textContent = `${format(t.accel.ax, 2)} m/s2`;
-  fields.accY.textContent = `${format(t.accel.ay, 2)} m/s2`;
-  fields.accZ.textContent = `${format(t.accel.az, 2)} m/s2`;
+  if (fields.groundSpeed) fields.groundSpeed.textContent = `${format(groundSpeed, 1)} m/s`;
+  if (fields.climbRate) fields.climbRate.textContent = `${format(t.velocity.vz, 2)} m/s`;
+  if (fields.heading) fields.heading.textContent = `${format(t.orientation.yaw, 1)} deg`;
+  if (fields.mode) fields.mode.textContent = t.mode;
+  if (fields.throttleValue) fields.throttleValue.textContent = `${format(t.throttle, 0)} %`;
+  if (fields.posX) fields.posX.textContent = `${format(t.position.x, 2)} m`;
+  if (fields.posY) fields.posY.textContent = `${format(t.position.y, 2)} m`;
+  if (fields.posZ) fields.posZ.textContent = `${format(t.position.z, 2)} m`;
+  if (fields.velX) fields.velX.textContent = `${format(t.velocity.vx, 2)} m/s`;
+  if (fields.velY) fields.velY.textContent = `${format(t.velocity.vy, 2)} m/s`;
+  if (fields.velZ) fields.velZ.textContent = `${format(t.velocity.vz, 2)} m/s`;
+  if (fields.accX) fields.accX.textContent = `${format(t.accel.ax, 2)} m/s2`;
+  if (fields.accY) fields.accY.textContent = `${format(t.accel.ay, 2)} m/s2`;
+  if (fields.accZ) fields.accZ.textContent = `${format(t.accel.az, 2)} m/s2`;
+  if (fields.gyroX) fields.gyroX.textContent = `${format(t.gyro.gx, 2)} deg/s`;
+  if (fields.gyroY) fields.gyroY.textContent = `${format(t.gyro.gy, 2)} deg/s`;
+  if (fields.gyroZ) fields.gyroZ.textContent = `${format(t.gyro.gz, 2)} deg/s`;
+  const tvcX = t.tvc.x || 0;
+  const tvcY = t.tvc.y || 0;
+  const tvcZ = t.tvc.z || 0;
+  if (fields.tvcXp) fields.tvcXp.textContent = `${format(Math.max(0, tvcX), 2)} deg`;
+  if (fields.tvcXn) fields.tvcXn.textContent = `${format(Math.max(0, -tvcX), 2)} deg`;
+  if (fields.tvcYp) fields.tvcYp.textContent = `${format(Math.max(0, tvcY), 2)} deg`;
+  if (fields.tvcYn) fields.tvcYn.textContent = `${format(Math.max(0, -tvcY), 2)} deg`;
+  if (fields.tvcZp) fields.tvcZp.textContent = `${format(Math.max(0, tvcZ), 2)} deg`;
+  if (fields.tvcZn) fields.tvcZn.textContent = `${format(Math.max(0, -tvcZ), 2)} deg`;
+
+  const raw = t.raw || {};
+  if (fields.tN) fields.tN.textContent = `${format(raw.tN ?? 0, 2)} s`;
+  if (fields.tM) fields.tM.textContent = `${format(raw.tM ?? 0, 2)} s`;
+  if (fields.velXs) fields.velXs.textContent = `${format(raw.vXs ?? 0, 2)}`;
+  if (fields.velYs) fields.velYs.textContent = `${format(raw.vYs ?? 0, 2)}`;
+  if (fields.velZs) fields.velZs.textContent = `${format(raw.vZs ?? 0, 2)}`;
+  if (fields.posXs) fields.posXs.textContent = `${format(raw.pXs ?? 0, 2)} m`;
+  if (fields.posYs) fields.posYs.textContent = `${format(raw.pYs ?? 0, 2)} m`;
+  if (fields.posZs) fields.posZs.textContent = `${format(raw.pZs ?? 0, 2)} m`;
+  if (fields.velX2) fields.velX2.textContent = `${format(raw.vX2 ?? 0, 2)} m/s`;
+  if (fields.velY2) fields.velY2.textContent = `${format(raw.vY2 ?? 0, 2)} m/s`;
+  if (fields.velZ2) fields.velZ2.textContent = `${format(raw.vZ2 ?? 0, 2)} m/s`;
+  if (fields.gFx) fields.gFx.textContent = `${format(raw.gFx ?? 0, 2)} g`;
+  if (fields.gSt) fields.gSt.textContent = `${raw.gSt ?? 0} sats`;
+  if (fields.fP) fields.fP.textContent = `${format(raw.fP ?? 0, 2)} %`;
+  if (fields.bPs) fields.bPs.textContent = `${format(raw.bPs ?? 0, 2)} hPa`;
+  if (fields.tP) fields.tP.textContent = `${format(raw.tP ?? 0, 2)} C`;
+  if (fields.bAt) fields.bAt.textContent = `${format(raw.bAt ?? 0, 2)} V`;
+  if (fields.uD) fields.uD.textContent = `${format(raw.uD ?? 0, 2)} cm`;
+  if (fields.mS) fields.mS.textContent = `${format(raw.mS ?? 0, 2)} kg`;
+  if (fields.ign) fields.ign.textContent = `${raw.ign ?? "--"}`;
+  if (fields.state) fields.state.textContent = `${raw.state ?? "--"}`;
 }
 
 function initThree() {
@@ -299,8 +457,8 @@ function initThree() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b0f14);
 
-  const width = modelViewport.clientWidth;
-  const height = modelViewport.clientHeight;
+  const width = Math.max(240, modelViewport.clientWidth);
+  const height = Math.max(180, modelViewport.clientHeight);
   camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
   camera.position.set(0, 0, 120);
 
@@ -328,31 +486,63 @@ function initThree() {
   resizeObserver.observe(modelViewport);
 }
 
+function resizeThree() {
+  if (!modelViewport || !renderer || !camera) {
+    return;
+  }
+  const width = Math.max(240, modelViewport.clientWidth);
+  const height = Math.max(180, modelViewport.clientHeight);
+  renderer.setSize(width, height);
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+}
+
 function loadModel(drone) {
   if (!scene) {
     return;
   }
-  const modelPath = "../../Models/AmonLander_model.stl";
   const loader = new STLLoader();
-  loader.load(
-    modelPath,
-    (geometry) => {
-      if (modelMesh) {
-        scene.remove(modelMesh);
-      }
-      geometry.center();
-      const material = new THREE.MeshStandardMaterial({
-        color: 0x3fd2b6,
-        metalness: 0.2,
-        roughness: 0.55,
+  const fileName = "AmonLander_model.stl";
+  const loadFromBuffer = (buffer) => {
+    const geometry = loader.parse(buffer);
+    if (modelMesh) {
+      scene.remove(modelMesh);
+    }
+    geometry.center();
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x3fd2b6,
+      metalness: 0.2,
+      roughness: 0.55,
+    });
+    modelMesh = new THREE.Mesh(geometry, material);
+    const box = new THREE.Box3().setFromObject(modelMesh);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const scale = 60 / maxDim;
+    modelMesh.scale.set(scale, scale, scale);
+    modelMesh.position.set(0, 0, 0);
+    scene.add(modelMesh);
+    resizeThree();
+  };
+
+  if (window.electronAPI && window.electronAPI.readModel) {
+    window.electronAPI
+      .readModel(fileName)
+      .then(loadFromBuffer)
+      .catch((error) => {
+        console.error("STL load failed", error);
       });
-      modelMesh = new THREE.Mesh(geometry, material);
-      modelMesh.scale.set(0.4, 0.4, 0.4);
-      scene.add(modelMesh);
-    },
+    return;
+  }
+
+  const modelPath = new URL("../../Models/AmonLander_model.stl", import.meta.url);
+  loader.load(
+    modelPath.href,
+    loadFromBuffer,
     undefined,
-    () => {
-      // Model failed to load.
+    (error) => {
+      console.error("STL load failed", error);
     }
   );
 }
@@ -378,42 +568,127 @@ function initCharts() {
     const ctx = canvas.getContext("2d");
     charts[item.id] = {
       ctx,
-      color: item.color,
-      data: Array(40).fill(0),
+      yLabel: item.yLabel,
+      xLabel: item.xLabel,
+      series: item.series.map((series) => ({
+        key: series.key,
+        color: series.color,
+        data: Array(50).fill(0),
+      })),
     };
   });
 }
 
+function autoscale(seriesList) {
+  let min = Infinity;
+  let max = -Infinity;
+  seriesList.forEach((series) => {
+    series.data.forEach((value) => {
+      if (value < min) min = value;
+      if (value > max) max = value;
+    });
+  });
+  if (!Number.isFinite(min) || !Number.isFinite(max)) {
+    return { min: -1, max: 1 };
+  }
+  if (min === max) {
+    return { min: min - 1, max: max + 1 };
+  }
+  const pad = (max - min) * 0.1;
+  return { min: min - pad, max: max + pad };
+}
+
 function drawChart(chart) {
-  const { ctx, data, color } = chart;
+  const { ctx, series, yLabel, xLabel } = chart;
+  if (ctx.canvas.width !== ctx.canvas.clientWidth || ctx.canvas.height !== ctx.canvas.clientHeight) {
+    ctx.canvas.width = ctx.canvas.clientWidth;
+    ctx.canvas.height = ctx.canvas.clientHeight;
+  }
   const { width, height } = ctx.canvas;
+  const padLeft = 42;
+  const padRight = 10;
+  const padTop = 10;
+  const padBottom = 26;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+  const { min, max } = autoscale(series);
+  const range = max - min || 1;
+
   ctx.clearRect(0, 0, width, height);
-  ctx.strokeStyle = "rgba(255,255,255,0.1)";
+
+  ctx.strokeStyle = "rgba(255,255,255,0.18)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(0, height / 2);
-  ctx.lineTo(width, height / 2);
+  ctx.moveTo(padLeft, padTop);
+  ctx.lineTo(padLeft, padTop + plotH);
+  ctx.lineTo(padLeft + plotW, padTop + plotH);
   ctx.stroke();
 
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
   ctx.beginPath();
-  data.forEach((value, index) => {
-    const x = (index / (data.length - 1)) * width;
-    const y = height / 2 - value * (height / 3);
-    if (index === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
-  });
+  ctx.moveTo(padLeft, padTop + plotH / 2);
+  ctx.lineTo(padLeft + plotW, padTop + plotH / 2);
   ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.font = "11px Bahnschrift, Segoe UI, sans-serif";
+  ctx.fillText(yLabel || "", padLeft, padTop - 2);
+  const xLabelText = xLabel || "";
+  const xLabelWidth = ctx.measureText(xLabelText).width;
+  ctx.fillText(xLabelText, padLeft + plotW / 2 - xLabelWidth / 2, height - 6);
+  ctx.fillText(max.toFixed(1), 6, padTop + 10);
+  ctx.fillText(min.toFixed(1), 6, padTop + plotH);
+
+  series.forEach((line) => {
+    ctx.strokeStyle = line.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    line.data.forEach((value, index) => {
+      const ratio = (value - min) / range;
+      const x = padLeft + (index / (line.data.length - 1)) * plotW;
+      const y = padTop + (1 - ratio) * plotH;
+      if (index === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+  });
 }
 
 function updateCharts() {
+  simTime += CHART_DT;
+  const sample = {
+    gx: Math.sin(simTime) * 1.5,
+    gy: Math.cos(simTime * 0.8) * 1.2,
+    gz: Math.sin(simTime * 0.6) * 1.1,
+    ax: Math.sin(simTime * 0.9) * 0.8,
+    ay: Math.cos(simTime * 0.7) * 0.7,
+    az: 9.81 + Math.sin(simTime * 0.4) * 0.3,
+    oriX: Math.sin(simTime * 0.6) * 5,
+    oriY: Math.cos(simTime * 0.5) * 4,
+    oriZ: Math.sin(simTime * 0.3) * 10,
+    oriXRef: 0,
+    oriYRef: 0,
+    oriZRef: 0,
+    alt: 2 + Math.sin(simTime * 0.2) * 0.5,
+    altRef: 2.2,
+    posX: Math.sin(simTime * 0.4) * 1.2,
+    posY: Math.cos(simTime * 0.3) * 1.1,
+    posRef: 0,
+    velX: Math.cos(simTime * 0.4) * 0.8,
+    velY: Math.sin(simTime * 0.3) * 0.7,
+    velRef: 0,
+    thr: 45 + Math.sin(simTime * 0.6) * 5,
+    thrRef: 50,
+  };
+
   Object.values(charts).forEach((chart) => {
-    chart.data.shift();
-    chart.data.push(0);
+    chart.series.forEach((line) => {
+      line.data.shift();
+      line.data.push(sample[line.key] ?? 0);
+    });
     drawChart(chart);
   });
 }
@@ -447,13 +722,17 @@ settingsBtn.addEventListener("click", () => {
   window.alert("Settings panel coming soon.");
 });
 
-refreshPortsBtn.addEventListener("click", () => {
-  refreshPorts().catch(() => {});
-});
+if (refreshPortsBtn) {
+  refreshPortsBtn.addEventListener("click", () => {
+    refreshPorts().catch(() => {});
+  });
+}
 
-connectBtn.addEventListener("click", () => {
-  connectLink().catch(() => {});
-});
+if (connectBtn) {
+  connectBtn.addEventListener("click", () => {
+    connectLink().catch(() => {});
+  });
+}
 
 if (linkBtn) {
   linkBtn.addEventListener("click", () => {
@@ -489,7 +768,7 @@ animate();
 refreshPorts().catch(() => {});
 
 setInterval(updateClocks, 1000);
-setInterval(updateCharts, 1200);
+setInterval(updateCharts, CHART_INTERVAL_MS);
 setInterval(async () => {
   const data = await fetchTelemetry();
   updateTelemetry(data || zeroTelemetry());

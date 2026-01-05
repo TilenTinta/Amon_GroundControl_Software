@@ -24,8 +24,8 @@ function startBackend() {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1600,
-    height: 920,
+    width: 1760,
+    height: 980,
     backgroundColor: "#0a0f16",
     webPreferences: {
       contextIsolation: true,

@@ -91,125 +91,128 @@
           </div>
 
           <div class="telemetry-layout">
-            <section class="plot-column">
+            <section class="plot-grid">
               <div class="chart-card">
-                <div class="panel-title">IMU Gyros</div>
-                <canvas id="chartGyro" width="360" height="140"></canvas>
+                <div class="panel-title">VN IMU Gyros (deg/s)</div>
+                <canvas id="chartGyro" width="360" height="170"></canvas>
               </div>
               <div class="chart-card">
-                <div class="panel-title">IMU Accels</div>
-                <canvas id="chartAccel" width="360" height="140"></canvas>
+                <div class="panel-title">VN IMU Accels (m/s2)</div>
+                <canvas id="chartAccel" width="360" height="170"></canvas>
               </div>
               <div class="chart-card">
-                <div class="panel-title">Orientation X</div>
-                <canvas id="chartOriX" width="360" height="140"></canvas>
+                <div class="panel-title">Body Orientation X (deg)</div>
+                <canvas id="chartOriX" width="360" height="170"></canvas>
               </div>
               <div class="chart-card">
-                <div class="panel-title">Orientation Y</div>
-                <canvas id="chartOriY" width="360" height="140"></canvas>
+                <div class="panel-title">Body Orientation Y (deg)</div>
+                <canvas id="chartOriY" width="360" height="170"></canvas>
               </div>
               <div class="chart-card">
-                <div class="panel-title">Orientation Z</div>
-                <canvas id="chartOriZ" width="360" height="140"></canvas>
+                <div class="panel-title">Body Orientation Z (deg)</div>
+                <canvas id="chartOriZ" width="360" height="170"></canvas>
               </div>
               <div class="chart-card">
-                <div class="panel-title">Altitude</div>
-                <canvas id="chartAlt" width="360" height="140"></canvas>
+                <div class="panel-title">Altitude (m)</div>
+                <canvas id="chartAlt" width="360" height="170"></canvas>
               </div>
               <div class="chart-card">
-                <div class="panel-title">XY Position</div>
-                <canvas id="chartPos" width="360" height="140"></canvas>
+                <div class="panel-title">XY Position (m)</div>
+                <canvas id="chartPos" width="360" height="170"></canvas>
               </div>
               <div class="chart-card">
-                <div class="panel-title">XY Velocity</div>
-                <canvas id="chartVel" width="360" height="140"></canvas>
+                <div class="panel-title">XY Velocity (m/s)</div>
+                <canvas id="chartVel" width="360" height="170"></canvas>
               </div>
               <div class="chart-card">
-                <div class="panel-title">Throttle</div>
-                <canvas id="chartThrottle" width="360" height="140"></canvas>
+                <div class="panel-title">Throttle (%)</div>
+                <canvas id="chartThrottle" width="360" height="170"></canvas>
               </div>
             </section>
 
             <aside class="data-column">
-              <section class="panel model-panel small-model">
-                <div class="panel-title">3D Model Viewport</div>
-                <div class="model-placeholder">
-                  <div id="modelViewport" class="model-viewport"></div>
-                  <div class="axis">
-                    <span>Roll <strong id="rollVal">--</strong></span>
-                    <span>Pitch <strong id="pitchVal">--</strong></span>
-                    <span>Yaw <strong id="yawVal">--</strong></span>
+              <div class="data-grid">
+                <section class="panel model-panel small-model">
+                  <div class="panel-title">Orientation</div>
+                  <div class="model-viewport" id="modelViewport"></div>
+                </section>
+                <section class="panel">
+                  <div class="panel-title">Status</div>
+                  <div class="kv-grid">
+                    <div><span class="label">State</span><span id="flightState">--</span></div>
+                    <div><span class="label">Mode</span><span id="mode">--</span></div>
+                    <div><span class="label">Battery</span><span id="battVoltage">-- V</span></div>
+                    <div><span class="label">Signal</span><span id="signalDbm">-- dBm</span></div>
+                    <div><span class="label">TLM</span><span id="tlmRate">-- Hz</span></div>
+                    <div><span class="label">GPS</span><span id="gpsSat">--</span></div>
+                    <div><span class="label">IMU Temp</span><span id="imuTemp">-- C</span></div>
+                    <div><span class="label">Baro</span><span id="baroAlt">-- m</span></div>
+                    <div><span class="label">Heading</span><span id="heading">-- deg</span></div>
+                    <div><span class="label">Climb</span><span id="climbRate">-- m/s</span></div>
+                    <div><span class="label">Gnd Spd</span><span id="groundSpeed">-- m/s</span></div>
                   </div>
+                </section>
+                <div class="tvc-control">
+                  <section class="panel tvc-panel">
+                    <div class="panel-title">TVC</div>
+                    <div class="kv-grid dense tvc-grid">
+                      <div><span class="label">X+</span><span id="tvcXp">-- deg</span></div>
+                      <div><span class="label">X-</span><span id="tvcXn">-- deg</span></div>
+                      <div><span class="label">Y+</span><span id="tvcYp">-- deg</span></div>
+                      <div><span class="label">Y-</span><span id="tvcYn">-- deg</span></div>
+                      <div><span class="label">Z+</span><span id="tvcZp">-- deg</span></div>
+                      <div><span class="label">Z-</span><span id="tvcZn">-- deg</span></div>
+                    </div>
+                  </section>
+                  <section class="panel control-panel">
+                    <div class="panel-title">Flight Controls</div>
+                    <div class="control-grid">
+                      <button id="startFlightBtn" class="primary" type="button">Start Flight</button>
+                      <button class="ghost" type="button">Arm</button>
+                      <button class="ghost" type="button">Disarm</button>
+                      <button class="ghost" type="button">Failsafe</button>
+                    </div>
+                  </section>
                 </div>
-              </section>
-              <section class="panel">
-                <div class="panel-title">Flight State</div>
-                <div class="kv-grid">
-                  <div><span class="label">State</span><span id="flightState">--</span></div>
-                  <div><span class="label">Mode</span><span id="mode">--</span></div>
-                  <div><span class="label">Battery</span><span id="battVoltage">-- V</span></div>
-                  <div><span class="label">Signal</span><span id="signalDbm">-- dBm</span></div>
-                  <div><span class="label">TLM</span><span id="tlmRate">-- Hz</span></div>
-                  <div><span class="label">GPS</span><span id="gpsSat">--</span></div>
-                  <div><span class="label">IMU Temp</span><span id="imuTemp">-- C</span></div>
-                  <div><span class="label">Baro</span><span id="baroAlt">-- m</span></div>
-                </div>
-              </section>
-              <section class="panel">
-                <div class="panel-title">Navigation</div>
-                <div class="kv-grid">
-                  <div><span class="label">Heading</span><span id="heading">-- deg</span></div>
-                  <div><span class="label">Ground Spd</span><span id="groundSpeed">-- m/s</span></div>
-                  <div><span class="label">Climb</span><span id="climbRate">-- m/s</span></div>
-                </div>
-              </section>
-              <section class="panel">
-                <div class="panel-title">Comms</div>
-                <div class="kv-grid">
-                  <div><span class="label">Quality</span><span id="linkQuality">-- %</span></div>
-                  <div><span class="label">Latency</span><span id="linkLatency">-- ms</span></div>
-                  <div><span class="label">Loss</span><span id="packetLoss">-- %</span></div>
-                </div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-title">TVC</div>
-                <div class="kv-grid">
-                  <div><span class="label">X</span><span id="tvcX">-- deg</span></div>
-                  <div><span class="label">Y</span><span id="tvcY">-- deg</span></div>
-                  <div><span class="label">Z</span><span id="tvcZ">-- deg</span></div>
-                </div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-title">Throttle</div>
-                <div class="throttle-value" id="throttleValue">-- %</div>
-              </section>
-
-              <section class="panel">
-                <div class="panel-title">Raw Telemetry</div>
-                <div class="kv-grid dense">
-                  <div><span class="label">X</span><span id="posX">-- m</span></div>
-                  <div><span class="label">Y</span><span id="posY">-- m</span></div>
-                  <div><span class="label">Z</span><span id="posZ">-- m</span></div>
-                  <div><span class="label">Vx</span><span id="velX">-- m/s</span></div>
-                  <div><span class="label">Vy</span><span id="velY">-- m/s</span></div>
-                  <div><span class="label">Vz</span><span id="velZ">-- m/s</span></div>
-                  <div><span class="label">Ax</span><span id="accX">-- m/s2</span></div>
-                  <div><span class="label">Ay</span><span id="accY">-- m/s2</span></div>
-                  <div><span class="label">Az</span><span id="accZ">-- m/s2</span></div>
-                </div>
-              </section>
-
-              <section class="panel control-panel">
-                <div class="panel-title">Flight Controls</div>
-                <div class="control-grid">
-                  <button id="startFlightBtn" class="primary" type="button">Start Flight</button>
-                  <button class="ghost" type="button">Arm</button>
-                  <button class="ghost" type="button">Disarm</button>
-                  <button class="ghost" type="button">Failsafe</button>
-                </div>
-              </section>
+                <section class="panel raw-panel">
+                  <div class="panel-title">Raw Telemetry</div>
+                  <div class="kv-grid dense raw-grid">
+                    <div><span class="label">tN</span><span id="tN">-- s</span></div>
+                    <div><span class="label">tM</span><span id="tM">-- s</span></div>
+                    <div><span class="label">gX</span><span id="gyroX">-- /s</span></div>
+                    <div><span class="label">gY</span><span id="gyroY">-- /s</span></div>
+                    <div><span class="label">gZ</span><span id="gyroZ">-- /s</span></div>
+                    <div><span class="label">aX</span><span id="accX">-- m/s2</span></div>
+                    <div><span class="label">aY</span><span id="accY">-- m/s2</span></div>
+                    <div><span class="label">aZ</span><span id="accZ">-- m/s2</span></div>
+                    <div><span class="label">vX</span><span id="velX">-- m/s</span></div>
+                    <div><span class="label">vY</span><span id="velY">-- m/s</span></div>
+                    <div><span class="label">vZ</span><span id="velZ">-- m/s</span></div>
+                    <div><span class="label">pX</span><span id="posX">-- m</span></div>
+                    <div><span class="label">pY</span><span id="posY">-- m</span></div>
+                    <div><span class="label">pZ</span><span id="posZ">-- m</span></div>
+                    <div><span class="label">vXs</span><span id="velXs">--</span></div>
+                    <div><span class="label">vYs</span><span id="velYs">--</span></div>
+                    <div><span class="label">vZs</span><span id="velZs">--</span></div>
+                    <div><span class="label">pXs</span><span id="posXs">-- m</span></div>
+                    <div><span class="label">pYs</span><span id="posYs">-- m</span></div>
+                    <div><span class="label">pZs</span><span id="posZs">-- m</span></div>
+                    <div><span class="label">vX2</span><span id="velX2">-- m/s</span></div>
+                    <div><span class="label">vY2</span><span id="velY2">-- m/s</span></div>
+                    <div><span class="label">vZ2</span><span id="velZ2">-- m/s</span></div>
+                    <div><span class="label">gFx</span><span id="gFx">-- g</span></div>
+                    <div><span class="label">gSt</span><span id="gSt">-- sats</span></div>
+                    <div><span class="label">fP</span><span id="fP">-- %</span></div>
+                    <div><span class="label">bPs</span><span id="bPs">-- hPa</span></div>
+                    <div><span class="label">tP</span><span id="tP">-- C</span></div>
+                    <div><span class="label">bAt</span><span id="bAt">-- V</span></div>
+                    <div><span class="label">uD</span><span id="uD">-- cm</span></div>
+                    <div><span class="label">mS</span><span id="mS">-- kg</span></div>
+                    <div><span class="label">ign</span><span id="ign">--</span></div>
+                    <div><span class="label">state</span><span id="state">--</span></div>
+                  </div>
+                </section>
+              </div>
             </aside>
           </div>
         </section>

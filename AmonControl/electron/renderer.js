@@ -1,10 +1,13 @@
 import * as THREE from "./three/three.module.js";
 import { STLLoader } from "./three/STLLoader.js";
 
-const backendUrl = window.electronAPI ? window.electronAPI.backendUrl : "";
+const backendUrl = window.electronAPI
+  ? window.electronAPI.backendUrl
+  : "http://127.0.0.1:8002";
 
 const appRoot = document.querySelector(".app");
 const linkStatus = document.getElementById("linkStatus");
+const statusDot = document.querySelector(".status-dot");
 const settingsBtn = document.getElementById("settingsBtn");
 const linkBtn = document.getElementById("linkBtn");
 const linkModal = document.getElementById("linkModal");
@@ -198,9 +201,11 @@ function updateConnectButton() {
   if (connectedPort) {
     connectBtn.textContent = "Disconnect";
     setLinkStatus(`Link online (${connectedPort})`);
+    if (statusDot) statusDot.classList.add("online");
   } else {
     connectBtn.textContent = "Connect";
     setLinkStatus("Link offline");
+    if (statusDot) statusDot.classList.remove("online");
   }
 }
 
@@ -236,7 +241,7 @@ function setDrone(drone) {
 
   if (drone === "talon") {
     droneLogo.src = "../../Images/FLIGHTORY_logo.png";
-    droneLogo.classList.remove("inverted");
+    droneLogo.classList.add("inverted");
     droneName.textContent = "Talon 1400";
   } else {
     droneLogo.src = "../../Images/AMON_logo.png";
@@ -265,6 +270,15 @@ async function refreshPorts() {
     const state = await fetchJson("/ports");
     const ports = (state && state.ports) || [];
     portSelect.innerHTML = "";
+    if (state && state.error) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "Install pyserial";
+      portSelect.appendChild(option);
+      connectedPort = "";
+      updateConnectButton();
+      return;
+    }
     if (!ports.length) {
       const option = document.createElement("option");
       option.value = "";
@@ -387,7 +401,9 @@ function format(value, decimals = 1) {
 
 function updateTelemetry(data) {
   const t = data || zeroTelemetry();
-  orientation = { ...t.orientation };
+  if (data && typeof t.tlm_rate === "number" && t.tlm_rate > 0) {
+    orientation = { ...t.orientation };
+  }
   if (fields.flightState) fields.flightState.textContent = t.flight_state;
   if (fields.battVoltage) fields.battVoltage.textContent = `${format(t.battery_v, 2)} V`;
   if (fields.signalDbm) fields.signalDbm.textContent = `${format(t.signal_dbm, 0)} dBm`;
@@ -503,16 +519,28 @@ function loadModel(drone) {
   }
   const loader = new STLLoader();
   const fileName = "AmonLander_model.stl";
+  const modelPath = new URL("../../Models/AmonLander_model.stl", import.meta.url);
+  const loadFromUrl = () => {
+    loader.load(
+      modelPath.href,
+      loadFromBuffer,
+      undefined,
+      (error) => {
+        console.error("STL load failed", error);
+      }
+    );
+  };
   const loadFromBuffer = (buffer) => {
     const geometry = loader.parse(buffer);
     if (modelMesh) {
       scene.remove(modelMesh);
     }
+    geometry.computeVertexNormals();
     geometry.center();
     const material = new THREE.MeshStandardMaterial({
-      color: 0x3fd2b6,
-      metalness: 0.2,
-      roughness: 0.55,
+      color: 0xffffff,
+      metalness: 0.05,
+      roughness: 0.8,
     });
     modelMesh = new THREE.Mesh(geometry, material);
     const box = new THREE.Box3().setFromObject(modelMesh);
@@ -532,19 +560,11 @@ function loadModel(drone) {
       .then(loadFromBuffer)
       .catch((error) => {
         console.error("STL load failed", error);
+        loadFromUrl();
       });
     return;
   }
-
-  const modelPath = new URL("../../Models/AmonLander_model.stl", import.meta.url);
-  loader.load(
-    modelPath.href,
-    loadFromBuffer,
-    undefined,
-    (error) => {
-      console.error("STL load failed", error);
-    }
-  );
+  loadFromUrl();
 }
 
 function animate() {
@@ -684,6 +704,8 @@ function updateCharts() {
     thrRef: 50,
   };
 
+  orientation = { roll: sample.oriX, pitch: sample.oriY, yaw: sample.oriZ };
+
   Object.values(charts).forEach((chart) => {
     chart.series.forEach((line) => {
       line.data.shift();
@@ -704,22 +726,29 @@ backBtn.addEventListener("click", () => {
   clearTelemetry();
 });
 
-if (startFlightBtn) {
-  startFlightBtn.addEventListener("click", () => {
-    if (!missionRunning) {
-      missionRunning = true;
-      missionStart = Date.now();
-      startFlightBtn.textContent = "Stop Flight";
-    } else {
-      missionRunning = false;
-      missionElapsed += Date.now() - missionStart;
-      startFlightBtn.textContent = "Start Flight";
-    }
-  });
-}
+  if (startFlightBtn) {
+    startFlightBtn.addEventListener("click", () => {
+      if (!missionRunning) {
+        missionRunning = true;
+        missionStart = Date.now();
+        startFlightBtn.textContent = "Stop Flight";
+        fetchJson("/ping", { method: "POST" }).catch((error) => {
+          console.warn("Ping failed", error);
+        });
+      } else {
+        missionRunning = false;
+        missionElapsed += Date.now() - missionStart;
+        startFlightBtn.textContent = "Start Flight";
+      }
+    });
+  }
 
 settingsBtn.addEventListener("click", () => {
-  window.alert("Settings panel coming soon.");
+  if (window.electronAPI && window.electronAPI.openFirmwareUpdater) {
+    window.electronAPI.openFirmwareUpdater();
+    return;
+  }
+  window.open("about:blank#fw-updater", "_blank", "noopener");
 });
 
 if (refreshPortsBtn) {

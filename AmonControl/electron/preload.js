@@ -1,9 +1,10 @@
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 const fs = require("fs");
 const path = require("path");
 
 contextBridge.exposeInMainWorld("electronAPI", {
-  backendUrl: "http://127.0.0.1:8000",
+  backendUrl: "http://127.0.0.1:8002",
+  openFirmwareUpdater: () => ipcRenderer.invoke("open-fw-updater"),
   readModel: async (fileName) => {
     const modelPath = path.join(__dirname, "..", "..", "Models", fileName);
     const buffer = await fs.promises.readFile(modelPath);

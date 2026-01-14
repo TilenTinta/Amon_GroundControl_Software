@@ -1,10 +1,6 @@
 # Amon Ground Control
 
-**Short description:** Desktop ground control station for the Amon Lander. The app uses an Electron UI with a Python backend to stream telemetry, render a 3D model, and plot live data.
-
-![Start Window](Pictures/startWindow.png)
-
-![Telemetry View](Pictures/dataWindow.png)
+Desktop ground control station for the Amon Lander. The app uses an Electron UI with a Python backend to stream telemetry, render a 3D model, and plot live data.
 
 ---
 
@@ -42,6 +38,10 @@ Part of the Amon Lander project:
 - 3D orientation model rendering (Three.js)
 - Multi-series telemetry plots for IMU, orientation, altitude, position, velocity, and throttle
 - Link management, status, and telemetry panels
+
+![Start Window](Pictures/startWindow.png)
+
+![Telemetry View](Pictures/dataWindow.png)
 
 ---
 

@@ -93,6 +93,10 @@ body {
   background: #f1b24d;
 }
 
+.status-dot.online {
+  background: #3fd2b6;
+}
+
 .icon-btn {
   border: 1px solid var(--border);
   background: var(--surface);

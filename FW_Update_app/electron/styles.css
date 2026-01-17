@@ -34,6 +34,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  min-height: 100vh;
 }
 
 .header {
@@ -247,6 +248,9 @@ button:disabled {
 
 .log-card {
   padding-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 320px;
 }
 
 .log-header {
@@ -261,7 +265,7 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px;
-  max-height: 220px;
+  max-height: none;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -269,6 +273,30 @@ button:disabled {
   font-family: "JetBrains Mono", "Consolas", monospace;
   font-size: 13px;
   color: #c9d3e0;
+  flex: 1;
+}
+
+.config-card {
+  padding-bottom: 18px;
+}
+
+.config-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px 18px;
+}
+
+.config-grid .label {
+  display: block;
+  margin-bottom: 6px;
 }
 
 .log-item {

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backend.logger import DataLogger
+from backend.pairing_service import run_pairing
 from backend.ping_service import send_ping
 from backend.serial_comm import SerialManager
 from backend.state import LinkState
@@ -41,6 +42,7 @@ def _zero_payload() -> dict:
         "velocity": {"vx": 0, "vy": 0, "vz": 0},
         "position": {"x": 0, "y": 0, "z": 0},
         "accel": {"ax": 0, "ay": 0, "az": 0},
+        "gyro": {"gx": 0, "gy": 0, "gz": 0},
         "throttle": 0,
         "tvc": {"x": 0, "y": 0, "z": 0},
         "link_quality": 0,
@@ -53,6 +55,11 @@ def _zero_payload() -> dict:
 def _connection_status() -> str:
     return f"Connected to {state.port}" if state.port else "Disconnected"
 
+def _sync_connection_state() -> None:
+    if not _serial().check_connection():
+        state.port = ""
+        state.baud_rate = 0
+
 
 def _serial() -> SerialManager:
     return state.serial
@@ -60,7 +67,12 @@ def _serial() -> SerialManager:
 
 @app.get("/status")
 def status() -> dict:
-    return {"ok": True, "connection_status": _connection_status()}
+    _sync_connection_state()
+    return {
+        "ok": True,
+        "connection_status": _connection_status(),
+        "connection_port": state.port,
+    }
 
 
 @app.get("/ports")
@@ -68,6 +80,7 @@ def ports() -> dict:
     error = None
     if not _serial().available:
         error = "pyserial not installed"
+    _sync_connection_state()
     return {
         "ports": _serial().list_ports(),
         "connection_port": state.port,
@@ -117,7 +130,13 @@ def disconnect() -> dict:
 
 @app.post("/ping")
 def ping() -> dict:
+    _sync_connection_state()
     return send_ping(_serial(), logger)
+
+
+@app.post("/pair")
+def pair() -> dict:
+    return run_pairing(_serial(), logger)
 
 
 @app.get("/telemetry")

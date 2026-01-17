@@ -25,7 +25,11 @@
               <span class="status-dot"></span>
               <span id="linkStatus">Link offline</span>
             </div>
-            <button id="linkBtn" class="ghost" type="button">Link Device</button>
+            <div class="status-pill">
+              <span class="status-dot drone-dot"></span>
+              <span id="droneStatus">Drone offline</span>
+            </div>
+            <button id="linkBtn" class="ghost" type="button">Connect Devices</button>
             <button id="settingsBtn" class="icon-btn" type="button" aria-label="Settings">
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path
@@ -222,28 +226,50 @@
     <div id="linkModal" class="modal hidden">
       <div class="modal-card">
         <div class="modal-header">
-          <div class="modal-title">Link Device</div>
+          <div class="modal-title">Connect Devices</div>
           <button id="linkCloseBtn" class="icon-btn" type="button" aria-label="Close">
             <span class="close-x">×</span>
           </button>
         </div>
-        <div class="connect-bar">
-          <div class="connect-field">
-            <span class="label">Port</span>
-            <select id="portSelect"></select>
+        <div class="connect-stack">
+          <div class="connect-bar">
+            <div class="section-header">
+              <span class="section-title">Link</span>
+            </div>
+            <div class="connect-field">
+              <span class="label">Port</span>
+              <select id="portSelect"></select>
+            </div>
+            <div class="connect-field">
+              <span class="label">Baud</span>
+              <select id="baudSelect">
+                <option>9600</option>
+                <option>57600</option>
+                <option selected>115200</option>
+                <option>230400</option>
+                <option>460800</option>
+              </select>
+            </div>
+            <button id="refreshPorts" class="ghost" type="button">Rescan</button>
+            <button id="connectBtn" class="primary" type="button">Connect Link</button>
           </div>
-          <div class="connect-field">
-            <span class="label">Baud</span>
-            <select id="baudSelect">
-              <option>9600</option>
-              <option>57600</option>
-              <option selected>115200</option>
-              <option>230400</option>
-              <option>460800</option>
-            </select>
+          <div class="connect-bar">
+            <div class="section-header">
+              <span class="section-title">Drone</span>
+            </div>
+            <div class="connect-field">
+              <span class="label">Address</span>
+              <select id="droneAddress">
+                <option selected>0xE7, 0xE7, 0xE7, 0xE7, 0xE7</option>
+                <option>0xE7, 0xE7, 0xE7, 0xE7, 0xE8</option>
+                <option>0xE7, 0xE7, 0xE7, 0xE7, 0xE9</option>
+                <option>0xE7, 0xE7, 0xE7, 0xE7, 0xEA</option>
+                <option>0xE7, 0xE7, 0xE7, 0xE7, 0xEB</option>
+                <option>0xE7, 0xE7, 0xE7, 0xE7, 0xEC</option>
+              </select>
+            </div>
+            <button id="pairDroneBtn" class="ghost" type="button" disabled>Pair Drone</button>
           </div>
-          <button id="refreshPorts" class="ghost" type="button">Rescan</button>
-          <button id="connectBtn" class="primary" type="button">Connect</button>
         </div>
       </div>
     </div>

@@ -47,7 +47,17 @@ class SerialManager:
 
     @property
     def is_connected(self) -> bool:
-        return self._serial is not None
+        return self._serial is not None and self._serial.is_open
+
+    def check_connection(self) -> bool:
+        if not self._serial:
+            return False
+        try:
+            _ = self._serial.in_waiting
+            return self._serial.is_open
+        except Exception:  # noqa: BLE001
+            self.disconnect()
+            return False
 
     def reset_input(self) -> None:
         if self._serial:

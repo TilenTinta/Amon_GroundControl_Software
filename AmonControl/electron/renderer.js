@@ -8,8 +8,11 @@ const backendUrl = window.electronAPI
 const appRoot = document.querySelector(".app");
 const linkStatus = document.getElementById("linkStatus");
 const statusDot = document.querySelector(".status-dot");
+const droneStatus = document.getElementById("droneStatus");
+const droneDot = document.querySelector(".drone-dot");
 const settingsBtn = document.getElementById("settingsBtn");
 const linkBtn = document.getElementById("linkBtn");
+const pairDroneBtn = document.getElementById("pairDroneBtn");
 const linkModal = document.getElementById("linkModal");
 const linkCloseBtn = document.getElementById("linkCloseBtn");
 const droneCards = document.querySelectorAll(".drone-card");
@@ -202,10 +205,20 @@ function updateConnectButton() {
     connectBtn.textContent = "Disconnect";
     setLinkStatus(`Link online (${connectedPort})`);
     if (statusDot) statusDot.classList.add("online");
+    if (pairDroneBtn) {
+      pairDroneBtn.disabled = false;
+      pairDroneBtn.classList.add("primary");
+      pairDroneBtn.classList.remove("ghost");
+    }
   } else {
     connectBtn.textContent = "Connect";
     setLinkStatus("Link offline");
     if (statusDot) statusDot.classList.remove("online");
+    if (pairDroneBtn) {
+      pairDroneBtn.disabled = true;
+      pairDroneBtn.classList.remove("primary");
+      pairDroneBtn.classList.add("ghost");
+    }
   }
 }
 
@@ -349,6 +362,21 @@ async function fetchTelemetry() {
   }
 }
 
+async function pollLinkStatus() {
+  try {
+    const state = await fetchJson("/status");
+    if (state && state.connection_port) {
+      connectedPort = state.connection_port;
+    } else {
+      connectedPort = "";
+    }
+    updateConnectButton();
+  } catch (error) {
+    connectedPort = "";
+    updateConnectButton();
+  }
+}
+
 function zeroTelemetry() {
   return {
     flight_state: "Idle",
@@ -403,6 +431,11 @@ function updateTelemetry(data) {
   const t = data || zeroTelemetry();
   if (data && typeof t.tlm_rate === "number" && t.tlm_rate > 0) {
     orientation = { ...t.orientation };
+  }
+  if (droneStatus && droneDot) {
+    const droneOnline = Boolean(data && typeof t.tlm_rate === "number" && t.tlm_rate > 0);
+    droneStatus.textContent = droneOnline ? "Drone online" : "Drone offline";
+    droneDot.classList.toggle("online", droneOnline);
   }
   if (fields.flightState) fields.flightState.textContent = t.flight_state;
   if (fields.battVoltage) fields.battVoltage.textContent = `${format(t.battery_v, 2)} V`;
@@ -771,6 +804,35 @@ if (linkBtn) {
   });
 }
 
+if (pairDroneBtn) {
+  pairDroneBtn.addEventListener("click", async () => {
+    if (droneStatus) {
+      droneStatus.textContent = "Drone pairing...";
+    }
+    if (droneDot) {
+      droneDot.classList.remove("online");
+    }
+    try {
+      const result = await fetchJson("/pair", { method: "POST" });
+      const ok = result && result.ok;
+      if (droneStatus) {
+        droneStatus.textContent = ok ? "Drone online" : "Drone offline";
+      }
+      if (droneDot) {
+        droneDot.classList.toggle("online", Boolean(ok));
+      }
+    } catch (error) {
+      if (droneStatus) {
+        droneStatus.textContent = "Drone offline";
+      }
+      if (droneDot) {
+        droneDot.classList.remove("online");
+      }
+      console.warn("Pairing failed", error);
+    }
+  });
+}
+
 if (linkCloseBtn) {
   linkCloseBtn.addEventListener("click", () => {
     if (linkModal) {
@@ -802,3 +864,6 @@ setInterval(async () => {
   const data = await fetchTelemetry();
   updateTelemetry(data || zeroTelemetry());
 }, 1500);
+setInterval(() => {
+  pollLinkStatus().catch(() => {});
+}, 2000);

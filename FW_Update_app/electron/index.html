@@ -4,10 +4,10 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src http://127.0.0.1:8001;"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src http://127.0.0.1:8001 http://127.0.0.1:8002;"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Amon Firmware Update</title>
+    <title>Amon System Settings</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -15,8 +15,8 @@
       <header class="header">
         <div class="title-block">
           <div class="tag">Amon System</div>
-          <h1>Amon Link Firmware Update Console</h1>
-          <p>Securely connect, verify, and deploy firmware to communication electronics.</p>
+          <h1>Amon Ground Control Center</h1>
+          <p>Securely connect, verify, deploy firmware to communication electronics and modify settings.</p>
         </div>
         <div class="status-panel">
           <div class="status-row">
@@ -162,6 +162,30 @@
           <div>
             <span class="label">Pipe1 RX</span>
             <span class="value muted">-</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card config-card">
+        <div class="config-header">
+          <h2>Software Configuration</h2>
+          <span class="muted">Link retry settings</span>
+        </div>
+        <div class="config-grid">
+          <div>
+            <span class="label">Max Retransmits</span>
+            <div class="config-row">
+              <input id="maxRetransmits" type="number" min="0" max="10" value="3" />
+              <button id="saveRetries" class="ghost" type="button">Save</button>
+            </div>
+          </div>
+          <div>
+            <span class="label">TX Error Count</span>
+            <span id="txErrorCount" class="value muted">0</span>
+          </div>
+          <div>
+            <span class="label">TX Error Streak</span>
+            <span id="txErrorStreak" class="value muted">0</span>
           </div>
         </div>
       </section>

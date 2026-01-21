@@ -6,6 +6,7 @@ from .protocol import (
     FLAG_DATA,
     ID_DRONE,
     ID_PC,
+    OPT_ERROR_TX,
     OPT_PAIR_START,
     OPT_PAIR_STATUS,
     PROTOCOL_VER,
@@ -13,10 +14,12 @@ from .protocol import (
     parse_frame,
 )
 from .serial_comm import SerialManager
+from .state import LinkState
 
 
 def _send_and_wait(
     serial: SerialManager,
+    state: LinkState,
     *,
     opcode: int,
     logger: DataLogger | None = None,
@@ -30,33 +33,47 @@ def _send_and_wait(
         opcode=opcode,
         payload=b"",
     )
-    serial.write(frame)
-    response = serial.read_frame(timeout_s=timeout_s)
-    if not response:
-        return {"ok": False, "error": "Timeout waiting for ACK"}
-    parsed = parse_frame(response)
-    if not parsed:
-        return {"ok": False, "error": "Invalid response frame"}
-    if parsed.opcode != opcode:
+    attempts = 0
+    while attempts <= state.max_retransmits:
+        serial.write(frame)
+        response = serial.read_frame(timeout_s=timeout_s)
+        if not response:
+            return {"ok": False, "error": "Timeout waiting for ACK"}
+        parsed = parse_frame(response)
+        if not parsed:
+            return {"ok": False, "error": "Invalid response frame"}
+        if parsed.flags & FLAG_ACK and parsed.opcode == opcode:
+            if parsed.src != ID_DRONE or parsed.dst != ID_PC:
+                return {"ok": False, "error": "Unexpected source/destination"}
+            state.error_tx_streak = 0
+            if logger:
+                logger.log_frame("pairing-ack", response)
+            return {"ok": True}
+        if parsed.flags & FLAG_ERR and parsed.opcode == OPT_ERROR_TX:
+            state.error_tx_count += 1
+            state.error_tx_streak += 1
+            attempts += 1
+            if state.error_tx_streak > state.max_retransmits:
+                return {"ok": False, "error": "Drone connection lost"}
+            continue
         return {"ok": False, "error": f"Unexpected opcode {parsed.opcode}"}
-    if parsed.src != ID_DRONE or parsed.dst != ID_PC:
-        return {"ok": False, "error": "Unexpected source/destination"}
-    if not (parsed.flags & FLAG_ACK):
-        return {"ok": False, "error": "ACK flag not set"}
-    if logger:
-        logger.log_frame("pairing-ack", response)
-    return {"ok": True}
+    return {"ok": False, "error": "Drone connection lost"}
 
 
-def run_pairing(serial: SerialManager, logger: DataLogger | None = None) -> dict:
+def run_pairing(
+    serial: SerialManager,
+    state: LinkState,
+    logger: DataLogger | None = None,
+) -> dict:
     if not serial.is_connected:
         return {"ok": False, "error": "Not connected"}
     try:
         serial.reset_input()
-        start = _send_and_wait(serial, opcode=OPT_PAIR_START, logger=logger)
+        state.error_tx_streak = 0
+        start = _send_and_wait(serial, state, opcode=OPT_PAIR_START, logger=logger)
         if not start.get("ok"):
             return start
-        status = _send_and_wait(serial, opcode=OPT_PAIR_STATUS, logger=logger)
+        status = _send_and_wait(serial, state, opcode=OPT_PAIR_STATUS, logger=logger)
         if not status.get("ok"):
             return status
         return {"ok": True}

@@ -141,7 +141,8 @@ button {
 }
 
 select,
-input[type="file"] {
+input[type="file"],
+input[type="number"] {
   border-radius: 12px;
   border: 1px solid var(--border);
   padding: 10px 12px;
@@ -297,6 +298,12 @@ button:disabled {
 .config-grid .label {
   display: block;
   margin-bottom: 6px;
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .log-item {

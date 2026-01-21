@@ -59,6 +59,7 @@ def _sync_connection_state() -> None:
     if not _serial().check_connection():
         state.port = ""
         state.baud_rate = 0
+        state.error_tx_streak = 0
 
 
 def _serial() -> SerialManager:
@@ -103,6 +104,7 @@ def connect(request: ConnectRequest) -> dict:
         _serial().connect(request.port, request.baud_rate)
         state.port = request.port
         state.baud_rate = request.baud_rate
+        state.error_tx_streak = 0
         logger.log_event(f"Connected to {state.port}")
     except Exception as exc:  # noqa: BLE001
         error = str(exc)
@@ -121,6 +123,7 @@ def disconnect() -> dict:
     _serial().disconnect()
     state.port = ""
     state.baud_rate = 0
+    state.error_tx_streak = 0
     logger.log_event("Disconnected")
     return {
         "connection_port": state.port,
@@ -136,7 +139,28 @@ def ping() -> dict:
 
 @app.post("/pair")
 def pair() -> dict:
-    return run_pairing(_serial(), logger)
+    return run_pairing(_serial(), state, logger)
+
+
+@app.get("/pair_config")
+def pair_config() -> dict:
+    return {"max_retransmits": state.max_retransmits}
+
+
+@app.post("/pair_config")
+def update_pair_config(payload: dict) -> dict:
+    value = payload.get("max_retransmits")
+    if isinstance(value, int):
+        state.max_retransmits = max(0, min(10, value))
+    return {"max_retransmits": state.max_retransmits}
+
+
+@app.get("/pair_stats")
+def pair_stats() -> dict:
+    return {
+        "error_tx_count": state.error_tx_count,
+        "error_tx_streak": state.error_tx_streak,
+    }
 
 
 @app.get("/telemetry")

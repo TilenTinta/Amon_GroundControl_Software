@@ -19,9 +19,14 @@ const crcValue = document.getElementById("crcValue");
 const bootVer = document.getElementById("bootVer");
 const deviceCrc32 = document.getElementById("deviceCrc32");
 const crcMatch = document.getElementById("crcMatch");
+const maxRetransmitsInput = document.getElementById("maxRetransmits");
+const saveRetriesBtn = document.getElementById("saveRetries");
+const txErrorCount = document.getElementById("txErrorCount");
+const txErrorStreak = document.getElementById("txErrorStreak");
 
 let allowUpload = true;
 let uploadWasInProgress = false;
+const mainBackendUrl = "http://127.0.0.1:8002";
 
 const actionButtons = [
   refreshPortsBtn,
@@ -276,3 +281,65 @@ waitForBackend().then((ready) => {
     refreshPorts().catch(() => {});
   }
 });
+
+async function fetchMainJson(path, options = {}) {
+  const response = await fetch(`${mainBackendUrl}${path}`, options);
+  if (!response.ok) {
+    throw new Error("Main backend request failed");
+  }
+  return response.json();
+}
+
+async function refreshRetryConfig() {
+  if (!maxRetransmitsInput) {
+    return;
+  }
+  try {
+    const state = await fetchMainJson("/pair_config");
+    if (typeof state.max_retransmits === "number") {
+      maxRetransmitsInput.value = `${state.max_retransmits}`;
+    }
+  } catch {
+    // ignore if main backend isn't running
+  }
+}
+
+async function refreshRetryStats() {
+  if (!txErrorCount || !txErrorStreak) {
+    return;
+  }
+  try {
+    const state = await fetchMainJson("/pair_stats");
+    txErrorCount.textContent = `${state.error_tx_count ?? 0}`;
+    txErrorStreak.textContent = `${state.error_tx_streak ?? 0}`;
+  } catch {
+    // ignore if main backend isn't running
+  }
+}
+
+if (saveRetriesBtn && maxRetransmitsInput) {
+  saveRetriesBtn.addEventListener("click", async () => {
+    const value = Number.parseInt(maxRetransmitsInput.value, 10);
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    try {
+      const state = await fetchMainJson("/pair_config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ max_retransmits: value }),
+      });
+      if (typeof state.max_retransmits === "number") {
+        maxRetransmitsInput.value = `${state.max_retransmits}`;
+      }
+    } catch {
+      // ignore if main backend isn't running
+    }
+  });
+}
+
+refreshRetryConfig().catch(() => {});
+refreshRetryStats().catch(() => {});
+setInterval(() => {
+  refreshRetryStats().catch(() => {});
+}, 2000);

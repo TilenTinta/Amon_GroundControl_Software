@@ -10,12 +10,14 @@ except ImportError:  # pragma: no cover
     serial = None
     list_ports = None
 
+from .logger import DataLogger
 from .protocol import SIG_SOF
 
 
 class SerialManager:
     def __init__(self) -> None:
         self._serial: Optional["serial.Serial"] = None
+        self._logger = DataLogger()
 
     @property
     def available(self) -> bool:
@@ -68,11 +70,16 @@ class SerialManager:
             raise RuntimeError("Serial port not open")
         self._serial.write(data)
 
-    def read_frame(self, timeout_s: float = 1.0) -> bytes | None:
+    def read_frame(
+        self,
+        timeout_s: float = 1.0,
+        buf: bytearray | None = None,
+    ) -> bytes | None:
         if not self._serial:
             return None
         deadline = time.monotonic() + timeout_s
-        buf = bytearray()
+        if buf is None:
+            buf = bytearray()
         while time.monotonic() < deadline:
             chunk = self._serial.read(1)
             if chunk:
@@ -84,10 +91,11 @@ class SerialManager:
                     buf.pop(0)
                     continue
                 length = buf[1]
-                total_len = 2 + length + 2
+                total_len = 2 + length
                 if len(buf) < total_len:
                     break
                 frame = bytes(buf[:total_len])
                 del buf[:total_len]
+                self._logger.log_frame("uart-rx", frame)
                 return frame
         return None

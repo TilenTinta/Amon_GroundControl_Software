@@ -24,4 +24,4 @@ class DataLogger:
         self._logger.info(message)
 
     def log_frame(self, label: str, frame: bytes) -> None:
-        self._logger.debug("%s: %s", label, frame.hex())
+        self._logger.info("%s: %s", label, frame.hex())

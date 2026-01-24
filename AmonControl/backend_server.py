@@ -60,6 +60,7 @@ def _sync_connection_state() -> None:
         state.port = ""
         state.baud_rate = 0
         state.error_tx_streak = 0
+        state.drone_connected = False
 
 
 def _serial() -> SerialManager:
@@ -73,6 +74,7 @@ def status() -> dict:
         "ok": True,
         "connection_status": _connection_status(),
         "connection_port": state.port,
+        "drone_connected": state.drone_connected,
     }
 
 
@@ -105,6 +107,7 @@ def connect(request: ConnectRequest) -> dict:
         state.port = request.port
         state.baud_rate = request.baud_rate
         state.error_tx_streak = 0
+        state.drone_connected = False
         logger.log_event(f"Connected to {state.port}")
     except Exception as exc:  # noqa: BLE001
         error = str(exc)
@@ -124,6 +127,7 @@ def disconnect() -> dict:
     state.port = ""
     state.baud_rate = 0
     state.error_tx_streak = 0
+    state.drone_connected = False
     logger.log_event("Disconnected")
     return {
         "connection_port": state.port,

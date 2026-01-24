@@ -13,3 +13,4 @@ class LinkState:
     max_retransmits: int = 3
     error_tx_count: int = 0
     error_tx_streak: int = 0
+    drone_connected: bool = False

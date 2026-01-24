@@ -17,74 +17,20 @@ const linkModal = document.getElementById("linkModal");
 const linkCloseBtn = document.getElementById("linkCloseBtn");
 const droneCards = document.querySelectorAll(".drone-card");
 const backBtn = document.getElementById("backBtn");
-const startFlightBtn = document.getElementById("startFlightBtn");
+let startFlightBtn = null;
 const droneLogo = document.getElementById("droneLogo");
 const droneName = document.getElementById("droneName");
-const modelViewport = document.getElementById("modelViewport");
+let modelViewport = null;
+const telemetryLayout = document.getElementById("telemetryLayout");
+const amonLayoutTemplate = document.getElementById("amon-layout");
+const talonLayoutTemplate = document.getElementById("talon-layout");
 
 const portSelect = document.getElementById("portSelect");
 const baudSelect = document.getElementById("baudSelect");
 const refreshPortsBtn = document.getElementById("refreshPorts");
 const connectBtn = document.getElementById("connectBtn");
 
-const fields = {
-  flightState: document.getElementById("flightState"),
-  battVoltage: document.getElementById("battVoltage"),
-  signalDbm: document.getElementById("signalDbm"),
-  tlmRate: document.getElementById("tlmRate"),
-  gpsSat: document.getElementById("gpsSat"),
-  imuTemp: document.getElementById("imuTemp"),
-  baroAlt: document.getElementById("baroAlt"),
-  rollVal: document.getElementById("rollVal"),
-  pitchVal: document.getElementById("pitchVal"),
-  yawVal: document.getElementById("yawVal"),
-  groundSpeed: document.getElementById("groundSpeed"),
-  climbRate: document.getElementById("climbRate"),
-  heading: document.getElementById("heading"),
-  mode: document.getElementById("mode"),
-  tvcXp: document.getElementById("tvcXp"),
-  tvcXn: document.getElementById("tvcXn"),
-  tvcYp: document.getElementById("tvcYp"),
-  tvcYn: document.getElementById("tvcYn"),
-  tvcZp: document.getElementById("tvcZp"),
-  tvcZn: document.getElementById("tvcZn"),
-  throttleValue: document.getElementById("throttleValue"),
-  posX: document.getElementById("posX"),
-  posY: document.getElementById("posY"),
-  posZ: document.getElementById("posZ"),
-  velX: document.getElementById("velX"),
-  velY: document.getElementById("velY"),
-  velZ: document.getElementById("velZ"),
-  velXs: document.getElementById("velXs"),
-  velYs: document.getElementById("velYs"),
-  velZs: document.getElementById("velZs"),
-  velX2: document.getElementById("velX2"),
-  velY2: document.getElementById("velY2"),
-  velZ2: document.getElementById("velZ2"),
-  accX: document.getElementById("accX"),
-  accY: document.getElementById("accY"),
-  accZ: document.getElementById("accZ"),
-  gyroX: document.getElementById("gyroX"),
-  gyroY: document.getElementById("gyroY"),
-  gyroZ: document.getElementById("gyroZ"),
-  tN: document.getElementById("tN"),
-  tM: document.getElementById("tM"),
-  posXs: document.getElementById("posXs"),
-  posYs: document.getElementById("posYs"),
-  posZs: document.getElementById("posZs"),
-  gFx: document.getElementById("gFx"),
-  gSt: document.getElementById("gSt"),
-  fP: document.getElementById("fP"),
-  bPs: document.getElementById("bPs"),
-  tP: document.getElementById("tP"),
-  bAt: document.getElementById("bAt"),
-  uD: document.getElementById("uD"),
-  mS: document.getElementById("mS"),
-  ign: document.getElementById("ign"),
-  state: document.getElementById("state"),
-  clockLocal: document.getElementById("clockLocal"),
-  clockMission: document.getElementById("clockMission"),
-};
+let fields = {};
 
 const chartConfig = [
   {
@@ -174,7 +120,7 @@ const chartConfig = [
   },
 ];
 
-const charts = {};
+let charts = {};
 const CHART_HZ = 50;
 const CHART_INTERVAL_MS = Math.round(1000 / CHART_HZ);
 const CHART_DT = 1 / CHART_HZ;
@@ -249,6 +195,7 @@ function setDrone(drone) {
   appRoot.dataset.drone = drone;
   appRoot.dataset.view = "telemetry";
   resetMission();
+  mountTelemetryLayout(drone);
   loadModel(drone);
   resizeThree();
 
@@ -265,6 +212,106 @@ function setDrone(drone) {
 
 function clearTelemetry() {
   appRoot.dataset.view = "select";
+}
+
+function mountTelemetryLayout(drone) {
+  if (!telemetryLayout) {
+    return;
+  }
+  const template =
+    drone === "talon" ? talonLayoutTemplate : amonLayoutTemplate;
+  if (!template) {
+    return;
+  }
+  telemetryLayout.innerHTML = "";
+  telemetryLayout.appendChild(template.content.cloneNode(true));
+  bindTelemetryElements();
+  bindTelemetryControls();
+  initCharts();
+  initThree();
+}
+
+function bindTelemetryElements() {
+  fields = {
+    flightState: document.getElementById("flightState"),
+    battVoltage: document.getElementById("battVoltage"),
+    signalDbm: document.getElementById("signalDbm"),
+    tlmRate: document.getElementById("tlmRate"),
+    gpsSat: document.getElementById("gpsSat"),
+    imuTemp: document.getElementById("imuTemp"),
+    baroAlt: document.getElementById("baroAlt"),
+    rollVal: document.getElementById("rollVal"),
+    pitchVal: document.getElementById("pitchVal"),
+    yawVal: document.getElementById("yawVal"),
+    groundSpeed: document.getElementById("groundSpeed"),
+    climbRate: document.getElementById("climbRate"),
+    heading: document.getElementById("heading"),
+    mode: document.getElementById("mode"),
+    tvcXp: document.getElementById("tvcXp"),
+    tvcXn: document.getElementById("tvcXn"),
+    tvcYp: document.getElementById("tvcYp"),
+    tvcYn: document.getElementById("tvcYn"),
+    tvcZp: document.getElementById("tvcZp"),
+    tvcZn: document.getElementById("tvcZn"),
+    throttleValue: document.getElementById("throttleValue"),
+    posX: document.getElementById("posX"),
+    posY: document.getElementById("posY"),
+    posZ: document.getElementById("posZ"),
+    velX: document.getElementById("velX"),
+    velY: document.getElementById("velY"),
+    velZ: document.getElementById("velZ"),
+    velXs: document.getElementById("velXs"),
+    velYs: document.getElementById("velYs"),
+    velZs: document.getElementById("velZs"),
+    velX2: document.getElementById("velX2"),
+    velY2: document.getElementById("velY2"),
+    velZ2: document.getElementById("velZ2"),
+    accX: document.getElementById("accX"),
+    accY: document.getElementById("accY"),
+    accZ: document.getElementById("accZ"),
+    gyroX: document.getElementById("gyroX"),
+    gyroY: document.getElementById("gyroY"),
+    gyroZ: document.getElementById("gyroZ"),
+    tN: document.getElementById("tN"),
+    tM: document.getElementById("tM"),
+    posXs: document.getElementById("posXs"),
+    posYs: document.getElementById("posYs"),
+    posZs: document.getElementById("posZs"),
+    gFx: document.getElementById("gFx"),
+    gSt: document.getElementById("gSt"),
+    fP: document.getElementById("fP"),
+    bPs: document.getElementById("bPs"),
+    tP: document.getElementById("tP"),
+    bAt: document.getElementById("bAt"),
+    uD: document.getElementById("uD"),
+    mS: document.getElementById("mS"),
+    ign: document.getElementById("ign"),
+    state: document.getElementById("state"),
+    clockLocal: document.getElementById("clockLocal"),
+    clockMission: document.getElementById("clockMission"),
+  };
+  modelViewport = document.getElementById("modelViewport");
+}
+
+function bindTelemetryControls() {
+  startFlightBtn = document.getElementById("startFlightBtn");
+  if (!startFlightBtn) {
+    return;
+  }
+  startFlightBtn.addEventListener("click", () => {
+    if (!missionRunning) {
+      missionRunning = true;
+      missionStart = Date.now();
+      startFlightBtn.textContent = "Stop Flight";
+      fetchJson("/ping", { method: "POST" }).catch((error) => {
+        console.warn("Ping failed", error);
+      });
+    } else {
+      missionRunning = false;
+      missionElapsed += Date.now() - missionStart;
+      startFlightBtn.textContent = "Start Flight";
+    }
+  });
 }
 
 async function fetchJson(path, options = {}) {
@@ -370,6 +417,11 @@ async function pollLinkStatus() {
     } else {
       connectedPort = "";
     }
+    if (droneStatus && droneDot) {
+      const droneOnline = Boolean(state && state.drone_connected);
+      droneStatus.textContent = droneOnline ? "Drone online" : "Drone offline";
+      droneDot.classList.toggle("online", droneOnline);
+    }
     updateConnectButton();
   } catch (error) {
     connectedPort = "";
@@ -431,11 +483,6 @@ function updateTelemetry(data) {
   const t = data || zeroTelemetry();
   if (data && typeof t.tlm_rate === "number" && t.tlm_rate > 0) {
     orientation = { ...t.orientation };
-  }
-  if (droneStatus && droneDot) {
-    const droneOnline = Boolean(data && typeof t.tlm_rate === "number" && t.tlm_rate > 0);
-    droneStatus.textContent = droneOnline ? "Drone online" : "Drone offline";
-    droneDot.classList.toggle("online", droneOnline);
   }
   if (fields.flightState) fields.flightState.textContent = t.flight_state;
   if (fields.battVoltage) fields.battVoltage.textContent = `${format(t.battery_v, 2)} V`;
@@ -503,25 +550,41 @@ function initThree() {
   if (!modelViewport) {
     return;
   }
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0b0f14);
+  if (!scene) {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0f14);
+  }
 
-  const width = Math.max(240, modelViewport.clientWidth);
-  const height = Math.max(180, modelViewport.clientHeight);
-  camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
-  camera.position.set(0, 0, 120);
+  if (!camera) {
+    const width = Math.max(240, modelViewport.clientWidth);
+    const height = Math.max(180, modelViewport.clientHeight);
+    camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    camera.position.set(0, 0, 120);
+  }
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.setSize(width, height);
-  modelViewport.appendChild(renderer.domElement);
+  if (!renderer) {
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+  }
+  if (renderer.domElement.parentElement !== modelViewport) {
+    if (renderer.domElement.parentElement) {
+      renderer.domElement.parentElement.removeChild(renderer.domElement);
+    }
+    modelViewport.appendChild(renderer.domElement);
+  }
+  resizeThree();
 
-  const ambient = new THREE.AmbientLight(0xffffff, 0.8);
-  scene.add(ambient);
-  const directional = new THREE.DirectionalLight(0xffffff, 0.6);
-  directional.position.set(50, 80, 100);
-  scene.add(directional);
+  if (!scene.children.length) {
+    const ambient = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambient);
+    const directional = new THREE.DirectionalLight(0xffffff, 0.6);
+    directional.position.set(50, 80, 100);
+    scene.add(directional);
+  }
 
+  if (resizeObserver) {
+    resizeObserver.disconnect();
+  }
   resizeObserver = new ResizeObserver(() => {
     if (!modelViewport || !renderer || !camera) {
       return;
@@ -551,8 +614,12 @@ function loadModel(drone) {
     return;
   }
   const loader = new STLLoader();
-  const fileName = "AmonLander_model.stl";
-  const modelPath = new URL("../../Models/AmonLander_model.stl", import.meta.url);
+  const modelFiles = {
+    amon: "AmonLander_model.stl",
+    talon: "Flightory_Talon-1400_model.stl",
+  };
+  const fileName = modelFiles[drone] || modelFiles.amon;
+  const modelPath = new URL(`../../Models/${fileName}`, import.meta.url);
   const loadFromUrl = () => {
     loader.load(
       modelPath.href,
@@ -580,7 +647,8 @@ function loadModel(drone) {
     const size = new THREE.Vector3();
     box.getSize(size);
     const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const scale = 60 / maxDim;
+    const targetSize = drone === "talon" ? 130 : 60;
+    const scale = targetSize / maxDim;
     modelMesh.scale.set(scale, scale, scale);
     modelMesh.position.set(0, 0, 0);
     scene.add(modelMesh);
@@ -613,6 +681,7 @@ function animate() {
 }
 
 function initCharts() {
+  charts = {};
   chartConfig.forEach((item) => {
     const canvas = document.getElementById(item.id);
     if (!canvas) {
@@ -711,33 +780,63 @@ function drawChart(chart) {
 }
 
 function updateCharts() {
-  simTime += CHART_DT;
-  const sample = {
-    gx: Math.sin(simTime) * 1.5,
-    gy: Math.cos(simTime * 0.8) * 1.2,
-    gz: Math.sin(simTime * 0.6) * 1.1,
-    ax: Math.sin(simTime * 0.9) * 0.8,
-    ay: Math.cos(simTime * 0.7) * 0.7,
-    az: 9.81 + Math.sin(simTime * 0.4) * 0.3,
-    oriX: Math.sin(simTime * 0.6) * 5,
-    oriY: Math.cos(simTime * 0.5) * 4,
-    oriZ: Math.sin(simTime * 0.3) * 10,
-    oriXRef: 0,
-    oriYRef: 0,
-    oriZRef: 0,
-    alt: 2 + Math.sin(simTime * 0.2) * 0.5,
-    altRef: 2.2,
-    posX: Math.sin(simTime * 0.4) * 1.2,
-    posY: Math.cos(simTime * 0.3) * 1.1,
-    posRef: 0,
-    velX: Math.cos(simTime * 0.4) * 0.8,
-    velY: Math.sin(simTime * 0.3) * 0.7,
-    velRef: 0,
-    thr: 45 + Math.sin(simTime * 0.6) * 5,
-    thrRef: 50,
-  };
+  const useSim = activeDrone === "talon";
+  if (useSim) {
+    simTime += CHART_DT;
+  }
+  const sample = useSim
+    ? {
+        gx: Math.sin(simTime) * 1.5,
+        gy: Math.cos(simTime * 0.8) * 1.2,
+        gz: Math.sin(simTime * 0.6) * 1.1,
+        ax: Math.sin(simTime * 0.9) * 0.8,
+        ay: Math.cos(simTime * 0.7) * 0.7,
+        az: 9.81 + Math.sin(simTime * 0.4) * 0.3,
+        oriX: Math.sin(simTime * 0.6) * 5,
+        oriY: Math.cos(simTime * 0.5) * 4,
+        oriZ: Math.sin(simTime * 0.3) * 10,
+        oriXRef: 0,
+        oriYRef: 0,
+        oriZRef: 0,
+        alt: 2 + Math.sin(simTime * 0.2) * 0.5,
+        altRef: 2.2,
+        posX: Math.sin(simTime * 0.4) * 1.2,
+        posY: Math.cos(simTime * 0.3) * 1.1,
+        posRef: 0,
+        velX: Math.cos(simTime * 0.4) * 0.8,
+        velY: Math.sin(simTime * 0.3) * 0.7,
+        velRef: 0,
+        thr: 45 + Math.sin(simTime * 0.6) * 5,
+        thrRef: 50,
+      }
+    : {
+        gx: 0,
+        gy: 0,
+        gz: 0,
+        ax: 0,
+        ay: 0,
+        az: 0,
+        oriX: 0,
+        oriY: 0,
+        oriZ: 0,
+        oriXRef: 0,
+        oriYRef: 0,
+        oriZRef: 0,
+        alt: 0,
+        altRef: 0,
+        posX: 0,
+        posY: 0,
+        posRef: 0,
+        velX: 0,
+        velY: 0,
+        velRef: 0,
+        thr: 0,
+        thrRef: 0,
+      };
 
-  orientation = { roll: sample.oriX, pitch: sample.oriY, yaw: sample.oriZ };
+  orientation = useSim
+    ? { roll: sample.oriX, pitch: sample.oriY, yaw: sample.oriZ }
+    : { roll: 0, pitch: 0, yaw: 0 };
 
   Object.values(charts).forEach((chart) => {
     chart.series.forEach((line) => {
@@ -759,22 +858,6 @@ backBtn.addEventListener("click", () => {
   clearTelemetry();
 });
 
-  if (startFlightBtn) {
-    startFlightBtn.addEventListener("click", () => {
-      if (!missionRunning) {
-        missionRunning = true;
-        missionStart = Date.now();
-        startFlightBtn.textContent = "Stop Flight";
-        fetchJson("/ping", { method: "POST" }).catch((error) => {
-          console.warn("Ping failed", error);
-        });
-      } else {
-        missionRunning = false;
-        missionElapsed += Date.now() - missionStart;
-        startFlightBtn.textContent = "Start Flight";
-      }
-    });
-  }
 
 settingsBtn.addEventListener("click", () => {
   if (window.electronAPI && window.electronAPI.openFirmwareUpdater) {
@@ -849,11 +932,10 @@ if (linkModal) {
   });
 }
 
-initCharts();
+mountTelemetryLayout(activeDrone);
 updateCharts();
 updateClocks();
 updateTelemetry(zeroTelemetry());
-initThree();
 loadModel(activeDrone);
 animate();
 refreshPorts().catch(() => {});

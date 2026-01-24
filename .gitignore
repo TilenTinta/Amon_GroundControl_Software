@@ -1,6 +1,7 @@
 # ignore directories
 node_modules/
 Data/
+Models/Flightory_Talon-1400_model.stl
 **/node_modules/
 
 # binaries

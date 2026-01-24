@@ -21,6 +21,7 @@ const deviceCrc32 = document.getElementById("deviceCrc32");
 const crcMatch = document.getElementById("crcMatch");
 const maxRetransmitsInput = document.getElementById("maxRetransmits");
 const saveRetriesBtn = document.getElementById("saveRetries");
+const requireStatusAckInput = document.getElementById("requireStatusAck");
 const txErrorCount = document.getElementById("txErrorCount");
 const txErrorStreak = document.getElementById("txErrorStreak");
 
@@ -299,6 +300,9 @@ async function refreshRetryConfig() {
     if (typeof state.max_retransmits === "number") {
       maxRetransmitsInput.value = `${state.max_retransmits}`;
     }
+    if (requireStatusAckInput && typeof state.require_status_ack === "boolean") {
+      requireStatusAckInput.checked = state.require_status_ack;
+    }
   } catch {
     // ignore if main backend isn't running
   }
@@ -327,10 +331,18 @@ if (saveRetriesBtn && maxRetransmitsInput) {
       const state = await fetchMainJson("/pair_config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ max_retransmits: value }),
+        body: JSON.stringify({
+          max_retransmits: value,
+          require_status_ack: requireStatusAckInput
+            ? requireStatusAckInput.checked
+            : undefined,
+        }),
       });
       if (typeof state.max_retransmits === "number") {
         maxRetransmitsInput.value = `${state.max_retransmits}`;
+      }
+      if (requireStatusAckInput && typeof state.require_status_ack === "boolean") {
+        requireStatusAckInput.checked = state.require_status_ack;
       }
     } catch {
       // ignore if main backend isn't running

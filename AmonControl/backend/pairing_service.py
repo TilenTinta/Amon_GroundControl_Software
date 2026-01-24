@@ -89,9 +89,13 @@ def run_pairing(
         start = _send_and_wait(serial, state, opcode=OPT_PAIR_START, logger=logger)
         if not start.get("ok"):
             return start
+        if not state.require_status_ack:
+            state.drone_connected = True
         status = _send_and_wait(serial, state, opcode=OPT_PAIR_STATUS, logger=logger)
         if not status.get("ok"):
-            return status
+            if state.require_status_ack:
+                return status
+            return {"ok": True, "warning": status.get("error")}
         state.drone_connected = True
         return {"ok": True}
     except Exception as exc:  # noqa: BLE001

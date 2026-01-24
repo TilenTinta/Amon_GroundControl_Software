@@ -129,6 +129,8 @@ let missionStart = 0;
 let missionElapsed = 0;
 let missionRunning = false;
 let connectedPort = "";
+let droneOnline = false;
+let pairingInProgress = false;
 let orientation = { roll: 0, pitch: 0, yaw: 0 };
 let simTime = 0;
 
@@ -234,7 +236,8 @@ function mountTelemetryLayout(drone) {
 function bindTelemetryElements() {
   fields = {
     flightState: document.getElementById("flightState"),
-    battVoltage: document.getElementById("battVoltage"),
+    battVoltageMain: document.getElementById("battVoltageMain"),
+    battVoltageMotor: document.getElementById("battVoltageMotor"),
     signalDbm: document.getElementById("signalDbm"),
     tlmRate: document.getElementById("tlmRate"),
     gpsSat: document.getElementById("gpsSat"),
@@ -283,8 +286,9 @@ function bindTelemetryElements() {
     bPs: document.getElementById("bPs"),
     tP: document.getElementById("tP"),
     bAt: document.getElementById("bAt"),
+    bAt2: document.getElementById("bAt2"),
     uD: document.getElementById("uD"),
-    mS: document.getElementById("mS"),
+    hum: document.getElementById("hum"),
     ign: document.getElementById("ign"),
     state: document.getElementById("state"),
     clockLocal: document.getElementById("clockLocal"),
@@ -418,7 +422,7 @@ async function pollLinkStatus() {
       connectedPort = "";
     }
     if (droneStatus && droneDot) {
-      const droneOnline = Boolean(state && state.drone_connected);
+      droneOnline = Boolean(state && state.drone_connected);
       droneStatus.textContent = droneOnline ? "Drone online" : "Drone offline";
       droneDot.classList.toggle("online", droneOnline);
     }
@@ -433,11 +437,16 @@ function zeroTelemetry() {
   return {
     flight_state: "Idle",
     battery_v: 0,
+    battery_main_v: 0,
+    battery_motor_v: 0,
     signal_dbm: 0,
     tlm_rate: 0,
     gps_sat: 0,
     imu_temp: 0,
     baro_alt: 0,
+    temperature_c: 0,
+    humidity_pct: 0,
+    pressure_hpa: 0,
     orientation: { roll: 0, pitch: 0, yaw: 0 },
     velocity: { vx: 0, vy: 0, vz: 0 },
     position: { x: 0, y: 0, z: 0 },
@@ -466,9 +475,10 @@ function zeroTelemetry() {
       fP: 0,
       bPs: 0,
       tP: 0,
+      hum: 0,
       bAt: 0,
+      bAt2: 0,
       uD: 0,
-      mS: 0,
       ign: 0,
       state: "--",
     },
@@ -485,7 +495,13 @@ function updateTelemetry(data) {
     orientation = { ...t.orientation };
   }
   if (fields.flightState) fields.flightState.textContent = t.flight_state;
-  if (fields.battVoltage) fields.battVoltage.textContent = `${format(t.battery_v, 2)} V`;
+  if (fields.battVoltageMain) {
+    const mainV = t.battery_main_v || t.battery_v || 0;
+    fields.battVoltageMain.textContent = `${format(mainV, 2)} V`;
+  }
+  if (fields.battVoltageMotor) {
+    fields.battVoltageMotor.textContent = `${format(t.battery_motor_v || 0, 2)} V`;
+  }
   if (fields.signalDbm) fields.signalDbm.textContent = `${format(t.signal_dbm, 0)} dBm`;
   if (fields.tlmRate) fields.tlmRate.textContent = `${format(t.tlm_rate, 2)} Hz`;
   if (fields.gpsSat) fields.gpsSat.textContent = `${t.gps_sat}`;
@@ -540,8 +556,9 @@ function updateTelemetry(data) {
   if (fields.bPs) fields.bPs.textContent = `${format(raw.bPs ?? 0, 2)} hPa`;
   if (fields.tP) fields.tP.textContent = `${format(raw.tP ?? 0, 2)} C`;
   if (fields.bAt) fields.bAt.textContent = `${format(raw.bAt ?? 0, 2)} V`;
+  if (fields.bAt2) fields.bAt2.textContent = `${format(raw.bAt2 ?? 0, 2)} V`;
   if (fields.uD) fields.uD.textContent = `${format(raw.uD ?? 0, 2)} cm`;
-  if (fields.mS) fields.mS.textContent = `${format(raw.mS ?? 0, 2)} kg`;
+  if (fields.hum) fields.hum.textContent = `${format(raw.hum ?? 0, 0)} %`;
   if (fields.ign) fields.ign.textContent = `${raw.ign ?? "--"}`;
   if (fields.state) fields.state.textContent = `${raw.state ?? "--"}`;
 }
@@ -889,6 +906,7 @@ if (linkBtn) {
 
 if (pairDroneBtn) {
   pairDroneBtn.addEventListener("click", async () => {
+    pairingInProgress = true;
     if (droneStatus) {
       droneStatus.textContent = "Drone pairing...";
     }
@@ -898,6 +916,7 @@ if (pairDroneBtn) {
     try {
       const result = await fetchJson("/pair", { method: "POST" });
       const ok = result && result.ok;
+      droneOnline = Boolean(ok);
       if (droneStatus) {
         droneStatus.textContent = ok ? "Drone online" : "Drone offline";
       }
@@ -912,6 +931,8 @@ if (pairDroneBtn) {
         droneDot.classList.remove("online");
       }
       console.warn("Pairing failed", error);
+    } finally {
+      pairingInProgress = false;
     }
   });
 }
@@ -943,9 +964,12 @@ refreshPorts().catch(() => {});
 setInterval(updateClocks, 1000);
 setInterval(updateCharts, CHART_INTERVAL_MS);
 setInterval(async () => {
+  if (!droneOnline || pairingInProgress) {
+    return;
+  }
   const data = await fetchTelemetry();
   updateTelemetry(data || zeroTelemetry());
-}, 1500);
+}, 200);
 setInterval(() => {
   pollLinkStatus().catch(() => {});
 }, 2000);

@@ -1,0 +1,4 @@
+{
+  "max_retransmits": 3,
+  "require_status_ack": false
+}

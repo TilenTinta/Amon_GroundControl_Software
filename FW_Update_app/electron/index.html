@@ -171,22 +171,31 @@
           <h2>Software Configuration</h2>
           <span class="muted">Link retry settings</span>
         </div>
-        <div class="config-grid">
-          <div>
+        <div class="config-grid software-grid">
+          <div class="config-block">
             <span class="label">Max Retransmits</span>
             <div class="config-row">
               <input id="maxRetransmits" type="number" min="0" max="10" value="3" />
               <button id="saveRetries" class="ghost" type="button">Save</button>
             </div>
           </div>
-          <div>
-            <span class="label">TX Error Count</span>
-            <span id="txErrorCount" class="value muted">0</span>
+          <div class="config-block counter-block">
+            <div class="counter-item">
+              <span class="label">TX Error Count</span>
+              <span id="txErrorCount" class="value muted">0</span>
+            </div>
+            <div class="counter-item">
+              <span class="label">TX Error Streak</span>
+              <span id="txErrorStreak" class="value muted">0</span>
+            </div>
           </div>
-          <div>
-            <span class="label">TX Error Streak</span>
-            <span id="txErrorStreak" class="value muted">0</span>
+          <div class="config-block">
+            <span class="label">Connect after Status ACK</span>
+            <div class="config-row">
+              <input id="requireStatusAck" type="checkbox" checked />
+            </div>
           </div>
+          <div class="config-block spacer"></div>
         </div>
       </section>
     </div>

@@ -306,6 +306,43 @@ button:disabled {
   gap: 12px;
 }
 
+.software-grid {
+  grid-template-columns: minmax(260px, 1.2fr) minmax(220px, 1fr);
+}
+
+.software-grid .config-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.software-grid .counter-block {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.software-grid .counter-block .label {
+  margin-bottom: 0;
+}
+
+.software-grid .counter-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.software-grid .spacer {
+  display: none;
+}
+
+@media (min-width: 720px) {
+  .software-grid .spacer {
+    display: block;
+  }
+}
+
 .log-item {
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.03);

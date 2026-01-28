@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import threading
+import time
 
 from backend.logger import DataLogger
 from backend.pairing_service import run_pairing
@@ -12,7 +14,20 @@ from backend.protocol import (
     ID_DRONE,
     ID_PC,
     OPT_TELEMETRY,
+    TVL_ALT,
+    TVL_ANGL,
+    TVL_BAT_EDF,
+    TVL_BAT_MAIN,
+    TVL_DATE_TIME,
+    TVL_DRONE_MODE,
+    TVL_ERR,
+    TVL_IMU,
+    TVL_IMU_TEMP,
+    TVL_RF_FAIL_CNT,
+    TVL_RF_STREAM,
+    TVL_RF_TX_CNT,
     TVL_THP,
+    TVL_TLM,
     parse_frame,
 )
 from backend.serial_comm import SerialManager
@@ -84,51 +99,198 @@ def _sync_connection_state() -> None:
         state.baud_rate = 0
         state.error_tx_streak = 0
         state.drone_connected = False
-        state.last_telemetry = _zero_payload()
+        with state.telemetry_lock:
+            state.last_telemetry = _zero_payload()
 
 
 def _serial() -> SerialManager:
     return state.serial
 
 
-def _decode_thp_payload(payload: bytes) -> dict | None:
-    if len(payload) < 12 or payload[0] != TVL_THP:
-        return None
-    temp_raw = (payload[1] << 8) | payload[2]
-    humidity = payload[3]
-    pressure_raw = (
-        (payload[4] << 24)
-        | (payload[5] << 16)
-        | (payload[6] << 8)
-        | payload[7]
-    )
-    batt_main_raw = (payload[8] << 8) | payload[9]
-    batt_motor_raw = (payload[10] << 8) | payload[11]
-    return {
-        "temperature_c": temp_raw / 100.0,
-        "humidity_pct": humidity,
-        "pressure_hpa": pressure_raw / 100.0,
-        "battery_v": batt_main_raw / 1000.0,
-        "battery_main_v": batt_main_raw / 1000.0,
-        "battery_motor_v": batt_motor_raw / 1000.0,
-        "raw": {
-            "bPs": pressure_raw / 100.0,
-            "tP": temp_raw / 100.0,
-            "hum": humidity,
-            "bAt": batt_main_raw / 1000.0,
-            "bAt2": batt_motor_raw / 1000.0,
-        },
+def _status_label(code: int) -> str:
+    labels = {
+        0: "Startup",
+        1: "Idle",
+        2: "Error",
+        3: "Arm",
+        4: "Fly",
+        5: "Fly Over",
+        6: "Gyro Calib",
     }
+    return labels.get(code, f"Mode {code}")
 
 
-def _read_latest_telemetry() -> None:
-    if not _serial().is_connected:
+def _parse_tlv_payload(payload: bytes) -> dict:
+    updates: dict = {}
+    raw_updates: dict = {}
+    battery_main_set = False
+    battery_edf_set = False
+    idx = 0
+    while idx < len(payload):
+        tlv = payload[idx]
+        idx += 1
+        if tlv == TVL_DRONE_MODE:
+            if idx + 1 > len(payload):
+                break
+            status = payload[idx]
+            idx += 1
+            updates["flight_state"] = _status_label(status)
+            updates["mode"] = _status_label(status)
+        elif tlv == TVL_ERR:
+            if idx + 2 > len(payload):
+                break
+            err1 = payload[idx]
+            err2 = payload[idx + 1]
+            idx += 2
+            raw_updates["state"] = f"0x{err1:02X}{err2:02X}"
+        elif tlv in (TVL_BAT_MAIN, TVL_BAT_EDF):
+            if idx + 2 > len(payload):
+                break
+            batt_raw = (payload[idx] << 8) | payload[idx + 1]
+            idx += 2
+            batt_v = batt_raw / 1000.0
+            if not battery_main_set:
+                battery_main_set = True
+                updates["battery_main_v"] = batt_v
+                updates["battery_v"] = batt_v
+                raw_updates["bAt"] = batt_v
+            else:
+                battery_edf_set = True
+                updates["battery_motor_v"] = batt_v
+                raw_updates["bAt2"] = batt_v
+        elif tlv == TVL_DATE_TIME:
+            if idx + 6 > len(payload):
+                break
+            year = payload[idx]
+            month = payload[idx + 1]
+            day = payload[idx + 2]
+            hour = payload[idx + 3]
+            minutes = payload[idx + 4]
+            seconds = payload[idx + 5]
+            idx += 6
+            raw_updates["tN"] = f"{year:02d}-{month:02d}-{day:02d}"
+            raw_updates["tM"] = f"{hour:02d}:{minutes:02d}:{seconds:02d}"
+        elif tlv == TVL_RF_STREAM:
+            if idx + 1 > len(payload):
+                break
+            raw_updates["fP"] = payload[idx]
+            idx += 1
+        elif tlv == TVL_RF_TX_CNT:
+            if idx + 4 > len(payload):
+                break
+            tx_cnt = (
+                (payload[idx] << 24)
+                | (payload[idx + 1] << 16)
+                | (payload[idx + 2] << 8)
+                | payload[idx + 3]
+            )
+            idx += 4
+            updates["link_quality"] = tx_cnt
+        elif tlv == TVL_RF_FAIL_CNT:
+            if idx + 4 > len(payload):
+                break
+            fail_cnt = (
+                (payload[idx] << 24)
+                | (payload[idx + 1] << 16)
+                | (payload[idx + 2] << 8)
+                | payload[idx + 3]
+            )
+            idx += 4
+            updates["packet_loss"] = fail_cnt
+        elif tlv == TVL_THP:
+            if idx + 7 > len(payload):
+                break
+            temp_raw = (payload[idx] << 8) | payload[idx + 1]
+            humidity = payload[idx + 2]
+            pressure_raw = (
+                (payload[idx + 3] << 24)
+                | (payload[idx + 4] << 16)
+                | (payload[idx + 5] << 8)
+                | payload[idx + 6]
+            )
+            idx += 7
+            updates["temperature_c"] = temp_raw / 100.0
+            updates["humidity_pct"] = humidity
+            updates["pressure_hpa"] = pressure_raw / 100.0
+            raw_updates["tP"] = temp_raw / 100.0
+            raw_updates["hum"] = humidity
+            raw_updates["bPs"] = pressure_raw / 100.0
+        elif tlv == TVL_TLM:
+            if idx + 1 > len(payload):
+                break
+            updates["tlm_rate"] = payload[idx]
+            idx += 1
+        elif tlv == TVL_ANGL:
+            if idx + 6 > len(payload):
+                break
+            roll = (payload[idx] << 8) | payload[idx + 1]
+            pitch = (payload[idx + 2] << 8) | payload[idx + 3]
+            yaw = (payload[idx + 4] << 8) | payload[idx + 5]
+            idx += 6
+            updates["orientation"] = {
+                "roll": _signed16(roll) / 100.0,
+                "pitch": _signed16(pitch) / 100.0,
+                "yaw": _signed16(yaw) / 100.0,
+            }
+        elif tlv == TVL_ALT:
+            if idx + 2 > len(payload):
+                break
+            alt_cm = (payload[idx] << 8) | payload[idx + 1]
+            idx += 2
+            updates["baro_alt"] = alt_cm / 100.0
+        elif tlv == TVL_IMU:
+            if idx + 12 > len(payload):
+                break
+            ax = _signed16((payload[idx] << 8) | payload[idx + 1])
+            ay = _signed16((payload[idx + 2] << 8) | payload[idx + 3])
+            az = _signed16((payload[idx + 4] << 8) | payload[idx + 5])
+            gx = _signed16((payload[idx + 6] << 8) | payload[idx + 7])
+            gy = _signed16((payload[idx + 8] << 8) | payload[idx + 9])
+            gz = _signed16((payload[idx + 10] << 8) | payload[idx + 11])
+            idx += 12
+            updates["accel"] = {"ax": ax, "ay": ay, "az": az}
+            updates["gyro"] = {"gx": gx, "gy": gy, "gz": gz}
+        elif tlv == TVL_IMU_TEMP:
+            if idx + 2 > len(payload):
+                break
+            imu_temp = _signed16((payload[idx] << 8) | payload[idx + 1])
+            idx += 2
+            updates["imu_temp"] = imu_temp / 100.0
+        else:
+            break
+    if raw_updates:
+        updates["raw"] = raw_updates
+    return updates
+
+
+def _signed16(value: int) -> int:
+    return value - 0x10000 if value & 0x8000 else value
+
+
+def _apply_telemetry(decoded: dict) -> None:
+    if not decoded:
         return
+    with state.telemetry_lock:
+        payload = state.last_telemetry or _zero_payload()
+        raw_updates = decoded.get("raw")
+        updates = dict(decoded)
+        updates.pop("raw", None)
+        payload.update(updates)
+        if raw_updates:
+            payload.setdefault("raw", {})
+            payload["raw"].update(raw_updates)
+        state.last_telemetry = payload
+
+
+def _telemetry_worker() -> None:
     rx_buf = bytearray()
     while True:
-        frame = _serial().read_frame(timeout_s=0.05, buf=rx_buf)
+        if not _serial().is_connected or state.telemetry_paused:
+            time.sleep(0.05)
+            continue
+        frame = _serial().read_frame(timeout_s=0.1, buf=rx_buf)
         if not frame:
-            break
+            continue
         parsed = parse_frame(frame)
         if not parsed:
             continue
@@ -136,13 +298,8 @@ def _read_latest_telemetry() -> None:
             continue
         if parsed.src != ID_DRONE or parsed.dst != ID_PC:
             continue
-        decoded = _decode_thp_payload(parsed.payload)
-        if not decoded:
-            continue
-        payload = _zero_payload()
-        payload.update(decoded)
-        payload["raw"].update(decoded.get("raw", {}))
-        state.last_telemetry = payload
+        decoded = _parse_tlv_payload(parsed.payload)
+        _apply_telemetry(decoded)
 
 
 @app.get("/status")
@@ -186,7 +343,8 @@ def connect(request: ConnectRequest) -> dict:
         state.baud_rate = request.baud_rate
         state.error_tx_streak = 0
         state.drone_connected = False
-        state.last_telemetry = _zero_payload()
+        with state.telemetry_lock:
+            state.last_telemetry = _zero_payload()
         logger.log_event(f"Connected to {state.port}")
     except Exception as exc:  # noqa: BLE001
         error = str(exc)
@@ -207,7 +365,8 @@ def disconnect() -> dict:
     state.baud_rate = 0
     state.error_tx_streak = 0
     state.drone_connected = False
-    state.last_telemetry = _zero_payload()
+    with state.telemetry_lock:
+        state.last_telemetry = _zero_payload()
     logger.log_event("Disconnected")
     return {
         "connection_port": state.port,
@@ -260,8 +419,14 @@ def pair_stats() -> dict:
 @app.get("/telemetry")
 def telemetry(drone: str = "amon") -> dict:
     _ = drone
-    _read_latest_telemetry()
-    return state.last_telemetry or _zero_payload()
+    with state.telemetry_lock:
+        return state.last_telemetry or _zero_payload()
+
+
+@app.on_event("startup")
+def _start_telemetry_thread() -> None:
+    thread = threading.Thread(target=_telemetry_worker, daemon=True)
+    thread.start()
 
 
 if __name__ == "__main__":

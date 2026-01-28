@@ -84,6 +84,7 @@ def run_pairing(
     if not serial.is_connected:
         return {"ok": False, "error": "Not connected"}
     try:
+        state.telemetry_paused = True
         serial.reset_input()
         state.error_tx_streak = 0
         start = _send_and_wait(serial, state, opcode=OPT_PAIR_START, logger=logger)
@@ -100,3 +101,5 @@ def run_pairing(
         return {"ok": True}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)}
+    finally:
+        state.telemetry_paused = False

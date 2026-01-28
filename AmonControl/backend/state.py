@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
+import threading
 
 from .serial_comm import SerialManager
 
@@ -20,6 +21,8 @@ class LinkState:
     drone_connected: bool = False
     last_telemetry: dict = field(default_factory=dict)
     require_status_ack: bool = True
+    telemetry_paused: bool = False
+    telemetry_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def __post_init__(self) -> None:
         self.load_config()

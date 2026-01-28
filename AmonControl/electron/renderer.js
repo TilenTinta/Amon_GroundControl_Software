@@ -133,6 +133,7 @@ let droneOnline = false;
 let pairingInProgress = false;
 let orientation = { roll: 0, pitch: 0, yaw: 0 };
 let simTime = 0;
+let latestTelemetry = null;
 
 let scene = null;
 let camera = null;
@@ -489,9 +490,12 @@ function format(value, decimals = 1) {
   return Number(value).toFixed(decimals);
 }
 
-function updateTelemetry(data) {
+function updateTelemetry(data, cacheUpdate = true) {
   const t = data || zeroTelemetry();
-  if (data && typeof t.tlm_rate === "number" && t.tlm_rate > 0) {
+  if (data && cacheUpdate) {
+    latestTelemetry = t;
+    orientation = { ...t.orientation };
+  } else if (data) {
     orientation = { ...t.orientation };
   }
   if (fields.flightState) fields.flightState.textContent = t.flight_state;
@@ -505,7 +509,11 @@ function updateTelemetry(data) {
   if (fields.signalDbm) fields.signalDbm.textContent = `${format(t.signal_dbm, 0)} dBm`;
   if (fields.tlmRate) fields.tlmRate.textContent = `${format(t.tlm_rate, 2)} Hz`;
   if (fields.gpsSat) fields.gpsSat.textContent = `${t.gps_sat}`;
-  if (fields.imuTemp) fields.imuTemp.textContent = `${format(t.imu_temp, 1)} C`;
+  const displayTemp =
+    typeof t.imu_temp === "number" && t.imu_temp !== 0
+      ? t.imu_temp
+      : t.temperature_c || 0;
+  if (fields.imuTemp) fields.imuTemp.textContent = `${format(displayTemp, 1)} C`;
   if (fields.baroAlt) fields.baroAlt.textContent = `${format(t.baro_alt, 1)} m`;
   if (fields.rollVal) fields.rollVal.textContent = `${format(t.orientation.roll, 1)} deg`;
   if (fields.pitchVal) fields.pitchVal.textContent = `${format(t.orientation.pitch, 1)} deg`;
@@ -539,8 +547,14 @@ function updateTelemetry(data) {
   if (fields.tvcZn) fields.tvcZn.textContent = `${format(Math.max(0, -tvcZ), 2)} deg`;
 
   const raw = t.raw || {};
-  if (fields.tN) fields.tN.textContent = `${format(raw.tN ?? 0, 2)} s`;
-  if (fields.tM) fields.tM.textContent = `${format(raw.tM ?? 0, 2)} s`;
+  if (fields.tN) {
+    fields.tN.textContent =
+      typeof raw.tN === "number" ? `${format(raw.tN, 2)} s` : `${raw.tN ?? "--"}`;
+  }
+  if (fields.tM) {
+    fields.tM.textContent =
+      typeof raw.tM === "number" ? `${format(raw.tM, 2)} s` : `${raw.tM ?? "--"}`;
+  }
   if (fields.velXs) fields.velXs.textContent = `${format(raw.vXs ?? 0, 2)}`;
   if (fields.velYs) fields.velYs.textContent = `${format(raw.vYs ?? 0, 2)}`;
   if (fields.velZs) fields.velZs.textContent = `${format(raw.vZs ?? 0, 2)}`;
@@ -826,34 +840,37 @@ function updateCharts() {
         thr: 45 + Math.sin(simTime * 0.6) * 5,
         thrRef: 50,
       }
-    : {
-        gx: 0,
-        gy: 0,
-        gz: 0,
-        ax: 0,
-        ay: 0,
-        az: 0,
-        oriX: 0,
-        oriY: 0,
-        oriZ: 0,
-        oriXRef: 0,
-        oriYRef: 0,
-        oriZRef: 0,
-        alt: 0,
-        altRef: 0,
-        posX: 0,
-        posY: 0,
-        posRef: 0,
-        velX: 0,
-        velY: 0,
-        velRef: 0,
-        thr: 0,
-        thrRef: 0,
-      };
+    : (() => {
+        const t = latestTelemetry || zeroTelemetry();
+        return {
+          gx: t.gyro.gx,
+          gy: t.gyro.gy,
+          gz: t.gyro.gz,
+          ax: t.accel.ax,
+          ay: t.accel.ay,
+          az: t.accel.az,
+          oriX: t.orientation.roll,
+          oriY: t.orientation.pitch,
+          oriZ: t.orientation.yaw,
+          oriXRef: 0,
+          oriYRef: 0,
+          oriZRef: 0,
+          alt: t.baro_alt,
+          altRef: 0,
+          posX: t.position.x,
+          posY: t.position.y,
+          posRef: 0,
+          velX: t.velocity.vx,
+          velY: t.velocity.vy,
+          velRef: 0,
+          thr: t.throttle,
+          thrRef: 0,
+        };
+      })();
 
   orientation = useSim
     ? { roll: sample.oriX, pitch: sample.oriY, yaw: sample.oriZ }
-    : { roll: 0, pitch: 0, yaw: 0 };
+    : orientation;
 
   Object.values(charts).forEach((chart) => {
     chart.series.forEach((line) => {
@@ -956,7 +973,7 @@ if (linkModal) {
 mountTelemetryLayout(activeDrone);
 updateCharts();
 updateClocks();
-updateTelemetry(zeroTelemetry());
+updateTelemetry(zeroTelemetry(), false);
 loadModel(activeDrone);
 animate();
 refreshPorts().catch(() => {});
@@ -968,7 +985,11 @@ setInterval(async () => {
     return;
   }
   const data = await fetchTelemetry();
-  updateTelemetry(data || zeroTelemetry());
+  if (data) {
+    updateTelemetry(data);
+    return;
+  }
+  updateTelemetry(latestTelemetry || zeroTelemetry(), Boolean(latestTelemetry));
 }, 200);
 setInterval(() => {
   pollLinkStatus().catch(() => {});

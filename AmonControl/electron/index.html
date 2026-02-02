@@ -98,17 +98,24 @@
         </section>
       </main>
     </div>
+    <div id="warnToast" class="toast hidden" role="status" aria-live="polite">
+      Arm the vehicle before starting flight.
+    </div>
 
     <template id="amon-layout">
       <div class="telemetry-layout">
         <section class="plot-grid">
           <div class="chart-card">
-            <div class="panel-title">VN IMU Gyros (deg/s)</div>
+            <div class="panel-title">IMU Gyros (deg/s)</div>
             <canvas id="chartGyro" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
-            <div class="panel-title">VN IMU Accels (m/s2)</div>
+            <div class="panel-title">IMU Accels (m/s2)</div>
             <canvas id="chartAccel" width="360" height="170"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="panel-title">Altitude (cm)</div>
+            <canvas id="chartAlt" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
             <div class="panel-title">Body Orientation X (deg)</div>
@@ -121,10 +128,6 @@
           <div class="chart-card">
             <div class="panel-title">Body Orientation Z (deg)</div>
             <canvas id="chartOriZ" width="360" height="170"></canvas>
-          </div>
-          <div class="chart-card">
-            <div class="panel-title">Altitude (m)</div>
-            <canvas id="chartAlt" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
             <div class="panel-title">XY Position (m)</div>
@@ -159,8 +162,8 @@
                 <div><span class="label">IMU Temp</span><span id="imuTemp">-- C</span></div>
                 <div><span class="label">Baro</span><span id="baroAlt">-- m</span></div>
                 <div><span class="label">Heading</span><span id="heading">-- deg</span></div>
-                <div><span class="label">Climb</span><span id="climbRate">-- m/s</span></div>
-                <div><span class="label">Gnd Spd</span><span id="groundSpeed">-- m/s</span></div>
+                <div><span class="label">TX Packets</span><span id="climbRate">--</span></div>
+                <div><span class="label">TX Fail</span><span id="groundSpeed">--</span></div>
               </div>
             </section>
             <div class="tvc-control">
@@ -179,8 +182,7 @@
                 <div class="panel-title">Flight Controls</div>
                 <div class="control-grid">
                   <button id="startFlightBtn" class="primary" type="button">Start Flight</button>
-                  <button class="ghost" type="button">Arm</button>
-                  <button class="ghost" type="button">Disarm</button>
+                  <button id="armBtn" class="ghost" type="button">Arm</button>
                   <button class="ghost" type="button">Failsafe</button>
                 </div>
               </section>
@@ -190,6 +192,7 @@
               <div class="kv-grid dense raw-grid">
                 <div><span class="label">tN</span><span id="tN">-- s</span></div>
                 <div><span class="label">tM</span><span id="tM">-- s</span></div>
+                <div><span class="label">fP</span><span id="fP">-- %</span></div>
                 <div><span class="label">gX</span><span id="gyroX">-- /s</span></div>
                 <div><span class="label">gY</span><span id="gyroY">-- /s</span></div>
                 <div><span class="label">gZ</span><span id="gyroZ">-- /s</span></div>
@@ -213,15 +216,16 @@
                 <div><span class="label">vZ2</span><span id="velZ2">-- m/s</span></div>
                 <div><span class="label">gFx</span><span id="gFx">-- g</span></div>
                 <div><span class="label">gSt</span><span id="gSt">-- sats</span></div>
-                <div><span class="label">fP</span><span id="fP">-- %</span></div>
                 <div><span class="label">bPs</span><span id="bPs">-- hPa</span></div>
                 <div><span class="label">tP</span><span id="tP">-- C</span></div>
+                <div><span class="label">HUM</span><span id="hum">-- %</span></div>
                 <div><span class="label">bAt1</span><span id="bAt">-- V</span></div>
                 <div><span class="label">bAt2</span><span id="bAt2">-- V</span></div>
-                <div><span class="label">uD</span><span id="uD">-- cm</span></div>
-                <div><span class="label">HUM</span><span id="hum">-- %</span></div>
                 <div><span class="label">ign</span><span id="ign">--</span></div>
+                <div><span class="label">TOF</span><span id="uD">-- cm</span></div>
                 <div><span class="label">state</span><span id="state">--</span></div>
+                <div class="raw-spacer"></div>
+                <div class="raw-spacer"></div>
               </div>
             </section>
           </div>
@@ -233,12 +237,16 @@
       <div class="telemetry-layout">
         <section class="plot-grid">
           <div class="chart-card">
-            <div class="panel-title">VN IMU Gyros (deg/s)</div>
+            <div class="panel-title">IMU Gyros (deg/s)</div>
             <canvas id="chartGyro" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
-            <div class="panel-title">VN IMU Accels (m/s2)</div>
+            <div class="panel-title">IMU Accels (m/s2)</div>
             <canvas id="chartAccel" width="360" height="170"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="panel-title">Altitude (cm)</div>
+            <canvas id="chartAlt" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
             <div class="panel-title">Body Orientation X (deg)</div>
@@ -251,10 +259,6 @@
           <div class="chart-card">
             <div class="panel-title">Body Orientation Z (deg)</div>
             <canvas id="chartOriZ" width="360" height="170"></canvas>
-          </div>
-          <div class="chart-card">
-            <div class="panel-title">Altitude (m)</div>
-            <canvas id="chartAlt" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
             <div class="panel-title">XY Position (m)</div>
@@ -289,8 +293,8 @@
                 <div><span class="label">IMU Temp</span><span id="imuTemp">-- C</span></div>
                 <div><span class="label">Baro</span><span id="baroAlt">-- m</span></div>
                 <div><span class="label">Heading</span><span id="heading">-- deg</span></div>
-                <div><span class="label">Climb</span><span id="climbRate">-- m/s</span></div>
-                <div><span class="label">Gnd Spd</span><span id="groundSpeed">-- m/s</span></div>
+                <div><span class="label">TX Packets</span><span id="climbRate">--</span></div>
+                <div><span class="label">TX Fail</span><span id="groundSpeed">--</span></div>
               </div>
             </section>
             <div class="tvc-control">
@@ -320,6 +324,7 @@
               <div class="kv-grid dense raw-grid">
                 <div><span class="label">tN</span><span id="tN">-- s</span></div>
                 <div><span class="label">tM</span><span id="tM">-- s</span></div>
+                <div><span class="label">fP</span><span id="fP">-- %</span></div>
                 <div><span class="label">gX</span><span id="gyroX">-- /s</span></div>
                 <div><span class="label">gY</span><span id="gyroY">-- /s</span></div>
                 <div><span class="label">gZ</span><span id="gyroZ">-- /s</span></div>
@@ -343,15 +348,16 @@
                 <div><span class="label">vZ2</span><span id="velZ2">-- m/s</span></div>
                 <div><span class="label">gFx</span><span id="gFx">-- g</span></div>
                 <div><span class="label">gSt</span><span id="gSt">-- sats</span></div>
-                <div><span class="label">fP</span><span id="fP">-- %</span></div>
                 <div><span class="label">bPs</span><span id="bPs">-- hPa</span></div>
                 <div><span class="label">tP</span><span id="tP">-- C</span></div>
+                <div><span class="label">HUM</span><span id="hum">-- %</span></div>
                 <div><span class="label">bAt1</span><span id="bAt">-- V</span></div>
                 <div><span class="label">bAt2</span><span id="bAt2">-- V</span></div>
-                <div><span class="label">uD</span><span id="uD">-- cm</span></div>
-                <div><span class="label">HUM</span><span id="hum">-- %</span></div>
                 <div><span class="label">ign</span><span id="ign">--</span></div>
+                <div><span class="label">TOF</span><span id="uD">-- cm</span></div>
                 <div><span class="label">state</span><span id="state">--</span></div>
+                <div class="raw-spacer"></div>
+                <div class="raw-spacer"></div>
               </div>
             </section>
           </div>

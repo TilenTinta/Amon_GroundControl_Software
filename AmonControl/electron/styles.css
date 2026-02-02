@@ -8,6 +8,8 @@
   --border: rgba(255, 255, 255, 0.08);
   --muted: #8f9bad;
   --accent: #3fd2b6;
+  --glow-green: radial-gradient(420px 260px at 0% 0%, rgba(63, 210, 182, 0.18), transparent 60%);
+  --glow-blue: radial-gradient(520px 320px at 50% 40%, rgba(90, 140, 255, 0.12), transparent 65%);
 }
 
 * {
@@ -26,6 +28,7 @@ body {
   flex-direction: column;
   gap: 20px;
   padding: 18px 26px 30px;
+  background: var(--glow-green), var(--glow-blue), #0b0f14;
 }
 
 .topbar {
@@ -144,12 +147,38 @@ button.primary {
   font-weight: 600;
 }
 
+button.is-disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+button.primary.is-disabled {
+  background: #2a313b;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #93a0b1;
+}
+
+button.ghost.is-disabled {
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #93a0b1;
+}
+
 button.ghost {
   border-radius: 999px;
   padding: 6px 14px;
   border: 1px solid var(--border);
   background: transparent;
   cursor: pointer;
+}
+
+button.armed {
+  border-radius: 999px;
+  padding: 6px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #2a313b;
+  color: #cfd7e3;
+  cursor: pointer;
+  font-weight: 600;
 }
 
 .connect-bar {
@@ -426,7 +455,30 @@ button.ghost {
 }
 
 .raw-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.raw-spacer {
+  visibility: hidden;
+}
+
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  background: rgba(20, 26, 34, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 12px;
+  color: #e9eef5;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  z-index: 50;
+  max-width: 240px;
+}
+
+.toast.hidden {
+  display: none;
 }
 
 .raw-panel {

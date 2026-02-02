@@ -23,6 +23,8 @@ class LinkState:
     require_status_ack: bool = True
     telemetry_paused: bool = False
     telemetry_lock: threading.Lock = field(default_factory=threading.Lock)
+    last_tlm_ts: float = 0.0
+    tlm_rate_hz: float = 0.0
 
     def __post_init__(self) -> None:
         self.load_config()

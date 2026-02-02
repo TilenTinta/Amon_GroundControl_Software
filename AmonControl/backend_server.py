@@ -11,9 +11,13 @@ from backend.pairing_service import run_pairing
 from backend.ping_service import send_ping
 from backend.protocol import (
     FLAG_STREAM,
+    FLAG_DATA,
     ID_DRONE,
+    ID_LINK_SW,
     ID_PC,
+    PROTOCOL_VER,
     OPT_TELEMETRY,
+    OPT_TELEMETRY_STREAM,
     TVL_ALT,
     TVL_ANGL,
     TVL_BAT_EDF,
@@ -29,6 +33,7 @@ from backend.protocol import (
     TVL_THP,
     TVL_TLM,
     parse_frame,
+    build_frame,
 )
 from backend.serial_comm import SerialManager
 from backend.state import LinkState
@@ -125,6 +130,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
     raw_updates: dict = {}
     battery_main_set = False
     battery_edf_set = False
+    angle_scale = 100.0
     idx = 0
     while idx < len(payload):
         tlv = payload[idx]
@@ -148,7 +154,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
                 break
             batt_raw = (payload[idx] << 8) | payload[idx + 1]
             idx += 2
-            batt_v = batt_raw / 1000.0
+            batt_v = _decode_battery_v(batt_raw)
             if not battery_main_set:
                 battery_main_set = True
                 updates["battery_main_v"] = batt_v
@@ -200,7 +206,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
         elif tlv == TVL_THP:
             if idx + 7 > len(payload):
                 break
-            temp_raw = (payload[idx] << 8) | payload[idx + 1]
+            temp_raw = _signed16((payload[idx] << 8) | payload[idx + 1])
             humidity = payload[idx + 2]
             pressure_raw = (
                 (payload[idx + 3] << 24)
@@ -209,9 +215,15 @@ def _parse_tlv_payload(payload: bytes) -> dict:
                 | payload[idx + 6]
             )
             idx += 7
+            baro_alt_raw = None
+            if idx + 2 <= len(payload):
+                baro_alt_raw = (payload[idx] << 8) | payload[idx + 1]
+                idx += 2
             updates["temperature_c"] = temp_raw / 100.0
             updates["humidity_pct"] = humidity
             updates["pressure_hpa"] = pressure_raw / 100.0
+            if baro_alt_raw is not None:
+                updates["baro_alt"] = baro_alt_raw
             raw_updates["tP"] = temp_raw / 100.0
             raw_updates["hum"] = humidity
             raw_updates["bPs"] = pressure_raw / 100.0
@@ -228,9 +240,9 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             yaw = (payload[idx + 4] << 8) | payload[idx + 5]
             idx += 6
             updates["orientation"] = {
-                "roll": _signed16(roll) / 100.0,
-                "pitch": _signed16(pitch) / 100.0,
-                "yaw": _signed16(yaw) / 100.0,
+                "roll": _signed16(roll) / angle_scale,
+                "pitch": _signed16(pitch) / angle_scale,
+                "yaw": _signed16(yaw) / angle_scale,
             }
         elif tlv == TVL_ALT:
             if idx + 2 > len(payload):
@@ -248,14 +260,22 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             gy = _signed16((payload[idx + 8] << 8) | payload[idx + 9])
             gz = _signed16((payload[idx + 10] << 8) | payload[idx + 11])
             idx += 12
-            updates["accel"] = {"ax": ax, "ay": ay, "az": az}
-            updates["gyro"] = {"gx": gx, "gy": gy, "gz": gz}
+            updates["accel"] = {
+                "ax": ax / angle_scale,
+                "ay": ay / angle_scale,
+                "az": az / angle_scale,
+            }
+            updates["gyro"] = {
+                "gx": gx / angle_scale,
+                "gy": gy / angle_scale,
+                "gz": gz / angle_scale,
+            }
         elif tlv == TVL_IMU_TEMP:
             if idx + 2 > len(payload):
                 break
             imu_temp = _signed16((payload[idx] << 8) | payload[idx + 1])
             idx += 2
-            updates["imu_temp"] = imu_temp / 100.0
+            updates["imu_temp"] = imu_temp / angle_scale
         else:
             break
     if raw_updates:
@@ -267,6 +287,12 @@ def _signed16(value: int) -> int:
     return value - 0x10000 if value & 0x8000 else value
 
 
+def _decode_battery_v(raw: int) -> float:
+    if raw < 2000:
+        return raw / 100.0
+    return raw / 1000.0
+
+
 def _apply_telemetry(decoded: dict) -> None:
     if not decoded:
         return
@@ -276,6 +302,16 @@ def _apply_telemetry(decoded: dict) -> None:
         updates = dict(decoded)
         updates.pop("raw", None)
         payload.update(updates)
+        now = time.monotonic()
+        if state.last_tlm_ts:
+            dt = now - state.last_tlm_ts
+            if dt > 0:
+                rate = 1.0 / dt
+                state.tlm_rate_hz = (
+                    rate if state.tlm_rate_hz == 0 else (state.tlm_rate_hz * 0.8 + rate * 0.2)
+                )
+        state.last_tlm_ts = now
+        payload["tlm_rate"] = state.tlm_rate_hz
         if raw_updates:
             payload.setdefault("raw", {})
             payload["raw"].update(raw_updates)
@@ -345,6 +381,19 @@ def connect(request: ConnectRequest) -> dict:
         state.drone_connected = False
         with state.telemetry_lock:
             state.last_telemetry = _zero_payload()
+        try:
+            stream_off = build_frame(
+                version=PROTOCOL_VER,
+                flags=FLAG_DATA,
+                src=ID_PC,
+                dst=ID_LINK_SW,
+                opcode=OPT_TELEMETRY_STREAM,
+                payload=bytes([0x00]),
+            )
+            _serial().write(stream_off)
+            logger.log_frame("telemetry-stream-off", stream_off)
+        except Exception as exc:  # noqa: BLE001
+            logger.log_event(f"Stream off command failed: {exc}")
         logger.log_event(f"Connected to {state.port}")
     except Exception as exc:  # noqa: BLE001
         error = str(exc)

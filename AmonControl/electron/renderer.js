@@ -17,6 +17,7 @@ const linkModal = document.getElementById("linkModal");
 const linkCloseBtn = document.getElementById("linkCloseBtn");
 const droneCards = document.querySelectorAll(".drone-card");
 const backBtn = document.getElementById("backBtn");
+const warnToast = document.getElementById("warnToast");
 let startFlightBtn = null;
 const droneLogo = document.getElementById("droneLogo");
 const droneName = document.getElementById("droneName");
@@ -128,12 +129,17 @@ let activeDrone = "amon";
 let missionStart = 0;
 let missionElapsed = 0;
 let missionRunning = false;
+let isArmed = false;
 let connectedPort = "";
 let droneOnline = false;
 let pairingInProgress = false;
 let orientation = { roll: 0, pitch: 0, yaw: 0 };
+let orientationTarget = { roll: 0, pitch: 0, yaw: 0 };
 let simTime = 0;
 let latestTelemetry = null;
+const MODEL_RESPONSE = 0.7;
+let lastChartTick = performance.now();
+let telemetryInFlight = false;
 
 let scene = null;
 let camera = null;
@@ -175,9 +181,32 @@ function resetMission() {
   missionRunning = false;
   missionElapsed = 0;
   missionStart = 0;
+  isArmed = false;
   if (startFlightBtn) {
     startFlightBtn.textContent = "Start Flight";
+    startFlightBtn.classList.add("is-disabled");
   }
+  const armBtn = document.getElementById("armBtn");
+  if (armBtn) {
+    armBtn.textContent = "Arm";
+    armBtn.classList.remove("armed");
+    armBtn.classList.add("ghost");
+  }
+}
+
+let toastTimer = null;
+function showWarning(message) {
+  if (!warnToast) {
+    return;
+  }
+  warnToast.textContent = message;
+  warnToast.classList.remove("hidden");
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
+  toastTimer = setTimeout(() => {
+    warnToast.classList.add("hidden");
+  }, 1600);
 }
 
 function updateClocks() {
@@ -300,10 +329,16 @@ function bindTelemetryElements() {
 
 function bindTelemetryControls() {
   startFlightBtn = document.getElementById("startFlightBtn");
+  const armBtn = document.getElementById("armBtn");
   if (!startFlightBtn) {
     return;
   }
+  startFlightBtn.classList.toggle("is-disabled", !isArmed);
   startFlightBtn.addEventListener("click", () => {
+    if (!isArmed) {
+      showWarning("Arm the vehicle before starting flight.");
+      return;
+    }
     if (!missionRunning) {
       missionRunning = true;
       missionStart = Date.now();
@@ -317,6 +352,17 @@ function bindTelemetryControls() {
       startFlightBtn.textContent = "Start Flight";
     }
   });
+  if (armBtn) {
+    armBtn.addEventListener("click", () => {
+      isArmed = !isArmed;
+      armBtn.textContent = isArmed ? "Disarm" : "Arm";
+      armBtn.classList.toggle("armed", isArmed);
+      armBtn.classList.toggle("ghost", !isArmed);
+      if (startFlightBtn) {
+        startFlightBtn.classList.toggle("is-disabled", !isArmed);
+      }
+    });
+  }
 }
 
 async function fetchJson(path, options = {}) {
@@ -494,9 +540,9 @@ function updateTelemetry(data, cacheUpdate = true) {
   const t = data || zeroTelemetry();
   if (data && cacheUpdate) {
     latestTelemetry = t;
-    orientation = { ...t.orientation };
+    orientationTarget = { ...t.orientation };
   } else if (data) {
-    orientation = { ...t.orientation };
+    orientationTarget = { ...t.orientation };
   }
   if (fields.flightState) fields.flightState.textContent = t.flight_state;
   if (fields.battVoltageMain) {
@@ -518,9 +564,8 @@ function updateTelemetry(data, cacheUpdate = true) {
   if (fields.rollVal) fields.rollVal.textContent = `${format(t.orientation.roll, 1)} deg`;
   if (fields.pitchVal) fields.pitchVal.textContent = `${format(t.orientation.pitch, 1)} deg`;
   if (fields.yawVal) fields.yawVal.textContent = `${format(t.orientation.yaw, 1)} deg`;
-  const groundSpeed = Math.hypot(t.velocity.vx, t.velocity.vy);
-  if (fields.groundSpeed) fields.groundSpeed.textContent = `${format(groundSpeed, 1)} m/s`;
-  if (fields.climbRate) fields.climbRate.textContent = `${format(t.velocity.vz, 2)} m/s`;
+  if (fields.groundSpeed) fields.groundSpeed.textContent = `${format(t.packet_loss ?? 0, 0)}`;
+  if (fields.climbRate) fields.climbRate.textContent = `${format(t.link_quality ?? 0, 0)}`;
   if (fields.heading) fields.heading.textContent = `${format(t.orientation.yaw, 1)} deg`;
   if (fields.mode) fields.mode.textContent = t.mode;
   if (fields.throttleValue) fields.throttleValue.textContent = `${format(t.throttle, 0)} %`;
@@ -702,6 +747,11 @@ function loadModel(drone) {
 function animate() {
   if (renderer && scene && camera) {
     if (modelMesh) {
+      orientation = {
+        roll: orientation.roll + (orientationTarget.roll - orientation.roll) * MODEL_RESPONSE,
+        pitch: orientation.pitch + (orientationTarget.pitch - orientation.pitch) * MODEL_RESPONSE,
+        yaw: orientation.yaw + (orientationTarget.yaw - orientation.yaw) * MODEL_RESPONSE,
+      };
       modelMesh.rotation.x = THREE.MathUtils.degToRad(orientation.roll || 0);
       modelMesh.rotation.y = THREE.MathUtils.degToRad(orientation.pitch || 0);
       modelMesh.rotation.z = THREE.MathUtils.degToRad(orientation.yaw || 0);
@@ -855,7 +905,7 @@ function updateCharts() {
           oriXRef: 0,
           oriYRef: 0,
           oriZRef: 0,
-          alt: t.baro_alt,
+          alt: (t.raw && typeof t.raw.uD === "number" ? t.raw.uD : 0),
           altRef: 0,
           posX: t.position.x,
           posY: t.position.y,
@@ -879,6 +929,38 @@ function updateCharts() {
     });
     drawChart(chart);
   });
+}
+
+function chartLoop(now) {
+  const elapsed = now - lastChartTick;
+  if (elapsed >= CHART_INTERVAL_MS) {
+    lastChartTick = now - (elapsed % CHART_INTERVAL_MS);
+    updateCharts();
+  }
+  requestAnimationFrame(chartLoop);
+}
+
+function scheduleTelemetryPoll() {
+  if (!droneOnline || pairingInProgress || telemetryInFlight) {
+    setTimeout(scheduleTelemetryPoll, 20);
+    return;
+  }
+  telemetryInFlight = true;
+  fetchTelemetry()
+    .then((data) => {
+      if (data) {
+        updateTelemetry(data);
+      } else {
+        updateTelemetry(latestTelemetry || zeroTelemetry(), Boolean(latestTelemetry));
+      }
+    })
+    .catch(() => {
+      updateTelemetry(latestTelemetry || zeroTelemetry(), Boolean(latestTelemetry));
+    })
+    .finally(() => {
+      telemetryInFlight = false;
+      setTimeout(scheduleTelemetryPoll, 100);
+    });
 }
 
 droneCards.forEach((card) => {
@@ -979,18 +1061,8 @@ animate();
 refreshPorts().catch(() => {});
 
 setInterval(updateClocks, 1000);
-setInterval(updateCharts, CHART_INTERVAL_MS);
-setInterval(async () => {
-  if (!droneOnline || pairingInProgress) {
-    return;
-  }
-  const data = await fetchTelemetry();
-  if (data) {
-    updateTelemetry(data);
-    return;
-  }
-  updateTelemetry(latestTelemetry || zeroTelemetry(), Boolean(latestTelemetry));
-}, 200);
+requestAnimationFrame(chartLoop);
+scheduleTelemetryPoll();
 setInterval(() => {
   pollLinkStatus().catch(() => {});
 }, 2000);

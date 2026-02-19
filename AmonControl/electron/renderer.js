@@ -752,9 +752,21 @@ function animate() {
         pitch: orientation.pitch + (orientationTarget.pitch - orientation.pitch) * MODEL_RESPONSE,
         yaw: orientation.yaw + (orientationTarget.yaw - orientation.yaw) * MODEL_RESPONSE,
       };
-      modelMesh.rotation.x = THREE.MathUtils.degToRad(orientation.roll || 0);
-      modelMesh.rotation.y = THREE.MathUtils.degToRad(orientation.pitch || 0);
-      modelMesh.rotation.z = THREE.MathUtils.degToRad(orientation.yaw || 0);
+      const roll = orientation.roll || 0;
+      const pitch = orientation.pitch || 0;
+      const yaw = orientation.yaw || 0;
+      if (activeDrone === "amon") {
+        const yawWithOffset = yaw - 90;
+        // Yaw-first order reduces pitch/roll coupling for this model orientation.
+        modelMesh.rotation.order = "YXZ";
+        modelMesh.rotation.x = THREE.MathUtils.degToRad(roll);
+        modelMesh.rotation.y = THREE.MathUtils.degToRad(yawWithOffset);
+        modelMesh.rotation.z = THREE.MathUtils.degToRad(pitch);
+      } else {
+        modelMesh.rotation.x = THREE.MathUtils.degToRad(roll);
+        modelMesh.rotation.y = THREE.MathUtils.degToRad(pitch);
+        modelMesh.rotation.z = THREE.MathUtils.degToRad(yaw);
+      }
     }
     renderer.render(scene, camera);
   }
@@ -892,6 +904,10 @@ function updateCharts() {
       }
     : (() => {
         const t = latestTelemetry || zeroTelemetry();
+        const useAmonAxisMap = activeDrone === "amon";
+        const roll = t.orientation.roll;
+        const pitch = t.orientation.pitch;
+        const yaw = t.orientation.yaw;
         return {
           gx: t.gyro.gx,
           gy: t.gyro.gy,
@@ -899,9 +915,9 @@ function updateCharts() {
           ax: t.accel.ax,
           ay: t.accel.ay,
           az: t.accel.az,
-          oriX: t.orientation.roll,
-          oriY: t.orientation.pitch,
-          oriZ: t.orientation.yaw,
+          oriX: useAmonAxisMap ? yaw : roll,
+          oriY: pitch,
+          oriZ: useAmonAxisMap ? roll : yaw,
           oriXRef: 0,
           oriYRef: 0,
           oriZRef: 0,

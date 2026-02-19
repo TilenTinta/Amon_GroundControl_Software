@@ -1,3 +1,11 @@
+####################################################################
+# File Name          : backend_server.py
+# Author             : Tinta T.
+# Version            : V1.0.0
+# Date               : 2026/02/09
+# Description        : FastAPI backend for Ground Control
+####################################################################
+
 from __future__ import annotations
 
 from fastapi import FastAPI
@@ -38,6 +46,8 @@ from backend.protocol import (
 from backend.serial_comm import SerialManager
 from backend.state import LinkState
 
+
+# FastAPI app and CORS setup for renderer access
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
@@ -53,11 +63,13 @@ class ConnectRequest(BaseModel):
     baud_rate: int
 
 
+# Global state and logger shared across endpoints
 state = LinkState()
 logger = DataLogger()
 
 
 def _zero_payload() -> dict:
+    # Baseline telemetry payload for UI when no data is available
     return {
         "flight_state": "Idle",
         "battery_v": 0,
@@ -95,9 +107,12 @@ def _zero_payload() -> dict:
 state.last_telemetry = _zero_payload()
 
 
+# Connect status for Link device
 def _connection_status() -> str:
     return f"Connected to {state.port}" if state.port else "Disconnected"
 
+
+# Connection state in sync with current serial connection
 def _sync_connection_state() -> None:
     if not _serial().check_connection():
         state.port = ""
@@ -108,10 +123,12 @@ def _sync_connection_state() -> None:
             state.last_telemetry = _zero_payload()
 
 
+# Helper to access the serial manager
 def _serial() -> SerialManager:
     return state.serial
 
 
+# Convert numeric status into human readable label -  GUI
 def _status_label(code: int) -> str:
     labels = {
         0: "Startup",
@@ -125,6 +142,8 @@ def _status_label(code: int) -> str:
     return labels.get(code, f"Mode {code}")
 
 
+
+# Decode TLV payload into GUI fields
 def _parse_tlv_payload(payload: bytes) -> dict:
     updates: dict = {}
     raw_updates: dict = {}
@@ -132,6 +151,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
     battery_edf_set = False
     angle_scale = 100.0
     idx = 0
+
     while idx < len(payload):
         tlv = payload[idx]
         idx += 1
@@ -142,6 +162,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             idx += 1
             updates["flight_state"] = _status_label(status)
             updates["mode"] = _status_label(status)
+
         elif tlv == TVL_ERR:
             if idx + 2 > len(payload):
                 break
@@ -149,12 +170,14 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             err2 = payload[idx + 1]
             idx += 2
             raw_updates["state"] = f"0x{err1:02X}{err2:02X}"
+
         elif tlv in (TVL_BAT_MAIN, TVL_BAT_EDF):
             if idx + 2 > len(payload):
                 break
             batt_raw = (payload[idx] << 8) | payload[idx + 1]
             idx += 2
             batt_v = _decode_battery_v(batt_raw)
+
             if not battery_main_set:
                 battery_main_set = True
                 updates["battery_main_v"] = batt_v
@@ -164,6 +187,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
                 battery_edf_set = True
                 updates["battery_motor_v"] = batt_v
                 raw_updates["bAt2"] = batt_v
+
         elif tlv == TVL_DATE_TIME:
             if idx + 6 > len(payload):
                 break
@@ -176,11 +200,13 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             idx += 6
             raw_updates["tN"] = f"{year:02d}-{month:02d}-{day:02d}"
             raw_updates["tM"] = f"{hour:02d}:{minutes:02d}:{seconds:02d}"
+
         elif tlv == TVL_RF_STREAM:
             if idx + 1 > len(payload):
                 break
             raw_updates["fP"] = payload[idx]
             idx += 1
+
         elif tlv == TVL_RF_TX_CNT:
             if idx + 4 > len(payload):
                 break
@@ -192,6 +218,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             )
             idx += 4
             updates["link_quality"] = tx_cnt
+
         elif tlv == TVL_RF_FAIL_CNT:
             if idx + 4 > len(payload):
                 break
@@ -203,6 +230,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             )
             idx += 4
             updates["packet_loss"] = fail_cnt
+
         elif tlv == TVL_THP:
             if idx + 7 > len(payload):
                 break
@@ -227,11 +255,13 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             raw_updates["tP"] = temp_raw / 100.0
             raw_updates["hum"] = humidity
             raw_updates["bPs"] = pressure_raw / 100.0
+
         elif tlv == TVL_TLM:
             if idx + 1 > len(payload):
                 break
             updates["tlm_rate"] = payload[idx]
             idx += 1
+
         elif tlv == TVL_ANGL:
             if idx + 6 > len(payload):
                 break
@@ -244,12 +274,14 @@ def _parse_tlv_payload(payload: bytes) -> dict:
                 "pitch": _signed16(pitch) / angle_scale,
                 "yaw": _signed16(yaw) / angle_scale,
             }
+
         elif tlv == TVL_ALT:
             if idx + 2 > len(payload):
                 break
             alt_cm = (payload[idx] << 8) | payload[idx + 1]
             idx += 2
             updates["baro_alt"] = alt_cm / 100.0
+
         elif tlv == TVL_IMU:
             if idx + 12 > len(payload):
                 break
@@ -270,29 +302,36 @@ def _parse_tlv_payload(payload: bytes) -> dict:
                 "gy": gy / angle_scale,
                 "gz": gz / angle_scale,
             }
+
         elif tlv == TVL_IMU_TEMP:
             if idx + 2 > len(payload):
                 break
             imu_temp = _signed16((payload[idx] << 8) | payload[idx + 1])
             idx += 2
             updates["imu_temp"] = imu_temp / angle_scale
+
         else:
             break
+
     if raw_updates:
         updates["raw"] = raw_updates
     return updates
 
 
+# Convert unsigned 16-bit to signed 16-bit
 def _signed16(value: int) -> int:
     return value - 0x10000 if value & 0x8000 else value
 
 
-def _decode_battery_v(raw: int) -> float:
+# Scaling for battery values from firmware
+def _decode_battery_v(raw: int) -> float:    
     if raw < 2000:
         return raw / 100.0
     return raw / 1000.0
 
 
+
+# Merge decoded telemetry into the cached payload
 def _apply_telemetry(decoded: dict) -> None:
     if not decoded:
         return
@@ -318,6 +357,7 @@ def _apply_telemetry(decoded: dict) -> None:
         state.last_telemetry = payload
 
 
+# Background thread to pull UART data and updates telemetry cache
 def _telemetry_worker() -> None:
     rx_buf = bytearray()
     while True:
@@ -338,6 +378,8 @@ def _telemetry_worker() -> None:
         _apply_telemetry(decoded)
 
 
+
+# Basic connection status for GUI
 @app.get("/status")
 def status() -> dict:
     _sync_connection_state()
@@ -349,6 +391,7 @@ def status() -> dict:
     }
 
 
+# List available COM ports and current connection
 @app.get("/ports")
 def ports() -> dict:
     error = None
@@ -363,9 +406,11 @@ def ports() -> dict:
     }
 
 
+# Open serial port and reset cached telemetry
 @app.post("/connect")
 def connect(request: ConnectRequest) -> dict:
     error = None
+
     if not _serial().available:
         error = "pyserial not installed"
         return {
@@ -379,9 +424,11 @@ def connect(request: ConnectRequest) -> dict:
         state.baud_rate = request.baud_rate
         state.error_tx_streak = 0
         state.drone_connected = False
+
         with state.telemetry_lock:
             state.last_telemetry = _zero_payload()
         try:
+            # Check that telemetry stream is disabled when opening link
             stream_off = build_frame(
                 version=PROTOCOL_VER,
                 flags=FLAG_DATA,
@@ -407,6 +454,7 @@ def connect(request: ConnectRequest) -> dict:
     }
 
 
+# Close port and clear state
 @app.post("/disconnect")
 def disconnect() -> dict:
     _serial().disconnect()
@@ -423,17 +471,20 @@ def disconnect() -> dict:
     }
 
 
+# Send a ping/pong test through the link - UNUSED
 @app.post("/ping")
-def ping() -> dict:
+def ping() -> dict: 
     _sync_connection_state()
     return send_ping(_serial(), logger)
 
 
+# Run pairing routine with the drone
 @app.post("/pair")
 def pair() -> dict:
     return run_pairing(_serial(), state, logger)
 
 
+# Read pairing configuration
 @app.get("/pair_config")
 def pair_config() -> dict:
     return {
@@ -442,6 +493,7 @@ def pair_config() -> dict:
     }
 
 
+# Update pairing configuration and persist it
 @app.post("/pair_config")
 def update_pair_config(payload: dict) -> dict:
     value = payload.get("max_retransmits")
@@ -457,6 +509,7 @@ def update_pair_config(payload: dict) -> dict:
     }
 
 
+# Return counters used by the GUI for TX packets
 @app.get("/pair_stats")
 def pair_stats() -> dict:
     return {
@@ -465,6 +518,7 @@ def pair_stats() -> dict:
     }
 
 
+# Return the latest cached telemetry (per drone in future)
 @app.get("/telemetry")
 def telemetry(drone: str = "amon") -> dict:
     _ = drone
@@ -472,6 +526,7 @@ def telemetry(drone: str = "amon") -> dict:
         return state.last_telemetry or _zero_payload()
 
 
+# Start UART reader thread when backend starts
 @app.on_event("startup")
 def _start_telemetry_thread() -> None:
     thread = threading.Thread(target=_telemetry_worker, daemon=True)
@@ -481,4 +536,5 @@ def _start_telemetry_thread() -> None:
 if __name__ == "__main__":
     import uvicorn
 
+    # Local development entry point
     uvicorn.run("backend_server:app", host="127.0.0.1", port=8002, log_level="info")

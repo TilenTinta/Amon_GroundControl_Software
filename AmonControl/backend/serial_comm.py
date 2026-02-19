@@ -1,3 +1,11 @@
+####################################################################
+# File Name          : serial_comm.py
+# Author             : Tinta T.
+# Version            : V1.0.0
+# Date               : 2026/02/09
+# Description        : Serial port manager and UART frame reader
+####################################################################
+
 from __future__ import annotations
 
 import time
@@ -19,15 +27,21 @@ class SerialManager:
         self._serial: Optional["serial.Serial"] = None
         self._logger = DataLogger()
 
+
+    # Pyserial availability check
     @property
     def available(self) -> bool:
         return serial is not None and list_ports is not None
+    
 
-    def list_ports(self) -> list[str]:
+    # Return device names for all visible serial ports
+    def list_ports(self) -> list[str]: 
         if list_ports is None:
             return []
         return [port.device for port in list_ports.comports()]
+    
 
+    # Open a new serial connection (close any existing)
     def connect(self, port: str, baud_rate: int) -> None:
         if serial is None:
             raise RuntimeError("pyserial not installed")
@@ -39,6 +53,8 @@ class SerialManager:
             write_timeout=0.5,
         )
 
+
+    # Close serial port if open
     def disconnect(self) -> None:
         if self._serial:
             try:
@@ -47,10 +63,14 @@ class SerialManager:
                 pass
         self._serial = None
 
+
+    # True if serial instance exists and is open
     @property
     def is_connected(self) -> bool:
         return self._serial is not None and self._serial.is_open
+    
 
+    # Verify the port is still open; disconnect on errors
     def check_connection(self) -> bool:
         if not self._serial:
             return False
@@ -60,16 +80,22 @@ class SerialManager:
         except Exception:  # noqa: BLE001
             self.disconnect()
             return False
+        
 
+    # Clear buffered RX bytes
     def reset_input(self) -> None:
         if self._serial:
             self._serial.reset_input_buffer()
 
+
+    # Write raw bytes to the port
     def write(self, data: bytes) -> None:
         if not self._serial:
             raise RuntimeError("Serial port not open")
         self._serial.write(data)
 
+
+    # Read a single framed packet using SIG_SOF + LEN convention
     def read_frame(
         self,
         timeout_s: float = 1.0,
@@ -78,10 +104,12 @@ class SerialManager:
         if not self._serial:
             return None
         deadline = time.monotonic() + timeout_s
+
         if buf is None:
             buf = bytearray()
         while time.monotonic() < deadline:
             chunk = self._serial.read(1)
+            
             if chunk:
                 buf.extend(chunk)
             else:

@@ -1,19 +1,30 @@
+####################################################################
+# File Name          : protocol.py
+# Author             : Tinta T.
+# Version            : V1.0.0
+# Date               : 2026/02/09
+# Description        : Protocol constants and frame helpers
+####################################################################
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Frame and protocol base
 SIG_SOF = 0xAA
 PROTOCOL_VER = 0x01
 BOOT_VER = 0x01
 HEADER_SHIFT_UART = 0x08
 HEADER_SHIFT_RF = 0x06
 
+# Address / IDs
 ID_PC = 0x01
 ID_LINK_BOOT = 0x10
 ID_LINK_SW = 0x11
 ID_DRONE = 0x20
 ID_BROADCAST = 0xFF
 
+# Flags
 FLAG_DATA = 0x05
 FLAG_ACK = 0x01
 FLAG_ERR = 0x02
@@ -21,6 +32,7 @@ FLAG_STREAM = 0x03
 FLAG_FRAG = 0x04
 FLAG_NAN = 0xF0
 
+# Opcodes
 OPT_PING = 0x01
 OPT_NOP = 0x00
 OPT_ERROR_REPORT = 0x02
@@ -36,6 +48,7 @@ OPT_DRONE_SET_STATE = 0x32
 OPT_DRONE_COMMAND = 0x33
 OPT_TELEMETRY = 0x40
 
+# Bootloader commands
 CMD_INFO = 0x01
 CMD_ERASE = 0x02
 CMD_WRITE = 0x03
@@ -45,12 +58,14 @@ CMD_END_OF_FW = 0x06
 CMD_ACK = 0x80
 CMD_ERR = 0x81
 
+# Bootloader response codes
 CODE_BAD_CRC = 0x01
 CODE_BOOT_VER = 0x02
 CODE_SW_CRC = 0x02
 CODE_EXIT_BOOT = 0x03
 CODE_DATA_WRITEN = 0x10
 
+# Transcode return codes
 TRANSCODE_OK = 0x00
 TRANSCODE_CRC_ERR = 0x01
 TRANSCODE_VER_ERR = 0x02
@@ -58,6 +73,7 @@ TRANSCODE_DEST_ERR = 0x03
 TRANSCODE_BROADCAST = 0x04
 TRANSCODE_BOOT_PKT = 0x0A
 
+# TLV / telemetry
 TVL_BAT = 0x01
 TVL_FW_VER = 0x01
 TVL_RSSI = 0x02
@@ -85,6 +101,7 @@ TVL_IMU_TEMP = 0x34
 TVL_GPS = 0x35
 
 
+# CRC-16/Modbus (poly 0xA001) with 0xFFFF initial value
 def crc16_cal(data: bytes) -> int:
     crc = 0xFFFF
     for byte in data:
@@ -98,6 +115,7 @@ def crc16_cal(data: bytes) -> int:
     return crc & 0xFFFF
 
 
+# Header: VER, FLAGS, SRC, DST, OPCODE, PLEN
 def build_frame(
     *,
     version: int,
@@ -117,6 +135,8 @@ def build_frame(
             len(payload),
         ]
     )
+
+    # LEN includes header + payload + CRC16
     length = len(header) + len(payload) + 2
     crc_input = bytes([length]) + header + payload
     crc = crc16_cal(crc_input)
@@ -125,6 +145,7 @@ def build_frame(
     return bytes([SIG_SOF, length]) + header + payload + bytes([crc_lo, crc_hi])
 
 
+# Default ping request frame
 def build_ping_frame() -> bytes:
     return build_frame(
         version=PROTOCOL_VER,
@@ -146,20 +167,29 @@ class ParsedFrame:
     payload: bytes
 
 
+# Basic length and SOF check
 def parse_frame(frame: bytes) -> ParsedFrame | None:
+
     if len(frame) < 10 or frame[0] != SIG_SOF:
         return None
+    
     length = frame[1]
     if len(frame) != 2 + length:
         return None
+    
+    # Validate CRC before decoding fields
     crc_recv = frame[-2] | (frame[-1] << 8)
     crc_calc = crc16_cal(frame[1:-2])
     if crc_recv != crc_calc:
         return None
+    
     header = frame[2:8]
     payload_len = header[5]
+
+    # Payload length must match LEN byte minus header + CRC
     if payload_len != length - 8:
         return None
+    
     payload = frame[8 : 8 + payload_len]
     return ParsedFrame(
         version=header[0],

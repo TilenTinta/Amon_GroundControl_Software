@@ -18,12 +18,14 @@ from backend.logger import DataLogger
 from backend.pairing_service import run_pairing
 from backend.ping_service import send_ping
 from backend.protocol import (
+    FLAG_ACK,
     FLAG_STREAM,
     FLAG_DATA,
     ID_DRONE,
     ID_LINK_SW,
     ID_PC,
     PROTOCOL_VER,
+    OPT_DRONE_SET_STATE,
     OPT_TELEMETRY,
     OPT_TELEMETRY_STREAM,
     TVL_ALT,
@@ -33,6 +35,7 @@ from backend.protocol import (
     TVL_DATE_TIME,
     TVL_DRONE_MODE,
     TVL_ERR,
+    TVL_FLIGHT_MODE,
     TVL_IMU,
     TVL_IMU_TEMP,
     TVL_RF_FAIL_CNT,
@@ -40,6 +43,9 @@ from backend.protocol import (
     TVL_RF_TX_CNT,
     TVL_THP,
     TVL_TLM,
+    TVL_STATE_ARM,
+    TVL_STATE_FLY,
+    TVL_STATE_FLY_OVER,
     parse_frame,
     build_frame,
 )
@@ -66,6 +72,8 @@ class ConnectRequest(BaseModel):
 # Global state and logger shared across endpoints
 state = LinkState()
 logger = DataLogger()
+TX_RETRY_DELAY_S = 0.1
+STATE_CONFIRM_TIMEOUT_S = 0.25
 
 
 def _zero_payload() -> dict:
@@ -94,6 +102,7 @@ def _zero_payload() -> dict:
         "link_latency": 0,
         "packet_loss": 0,
         "mode": "-",
+        "flight_phase": "-",
         "raw": {
             "bPs": 0,
             "tP": 0,
@@ -128,6 +137,103 @@ def _serial() -> SerialManager:
     return state.serial
 
 
+def _send_drone_state(state_code: int) -> dict:
+    _sync_connection_state()
+    if not _serial().is_connected:
+        return {"ok": False, "error": "Not connected"}
+    state_nibble = state_code & 0x0F
+
+    def _telemetry_has_state(payload: bytes, expected_state_nibble: int) -> bool:
+        idx = 0
+        while idx < len(payload):
+            tlv = payload[idx]
+            idx += 1
+            if tlv == TVL_DRONE_MODE:
+                if idx >= len(payload):
+                    return False
+                mode = payload[idx]
+                return (mode & 0x0F) == expected_state_nibble
+            if tlv in (TVL_RF_STREAM, TVL_TLM):
+                idx += 1
+            elif tlv in (TVL_BAT_MAIN, TVL_BAT_EDF, TVL_ERR, TVL_ALT, TVL_IMU_TEMP):
+                idx += 2
+            elif tlv == TVL_DATE_TIME:
+                idx += 6
+            elif tlv in (TVL_RF_TX_CNT, TVL_RF_FAIL_CNT):
+                idx += 4
+            elif tlv == TVL_THP:
+                # temp(2) + hum(1) + pressure(4) + optional baro_alt(2)
+                if idx + 7 > len(payload):
+                    return False
+                idx += 7
+                if idx + 2 <= len(payload):
+                    idx += 2
+            elif tlv == TVL_ANGL:
+                idx += 6
+            elif tlv == TVL_IMU:
+                idx += 12
+            else:
+                return False
+            if idx > len(payload):
+                return False
+        return False
+
+    try:
+        state.telemetry_paused = True
+        frame = build_frame(
+            version=PROTOCOL_VER,
+            flags=FLAG_DATA,
+            src=ID_PC,
+            dst=ID_DRONE,
+            opcode=OPT_DRONE_SET_STATE,
+            payload=bytes([state_nibble]),
+        )
+        send_count = max(1, state.max_retransmits + 1)
+        rx_buf = bytearray()
+        for attempt in range(send_count):
+            _serial().write(frame)
+            logger.log_frame("drone-state-tx", frame)
+            deadline = time.monotonic() + STATE_CONFIRM_TIMEOUT_S
+            while time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                response = _serial().read_frame(timeout_s=remaining, buf=rx_buf)
+                if not response:
+                    break
+                parsed = parse_frame(response)
+                if not parsed:
+                    continue
+                ack_ok = (
+                    (parsed.flags & FLAG_ACK)
+                    and parsed.opcode == OPT_DRONE_SET_STATE
+                    and parsed.src == ID_DRONE
+                    and parsed.dst == ID_PC
+                )
+                telemetry_ok = (
+                    parsed.opcode == OPT_TELEMETRY
+                    and parsed.src == ID_DRONE
+                    and parsed.dst == ID_PC
+                    and (parsed.flags == FLAG_STREAM or parsed.flags == FLAG_DATA)
+                    and _telemetry_has_state(parsed.payload, state_nibble)
+                )
+                if ack_ok or telemetry_ok:
+                    logger.log_event(
+                        "State change confirmed by ACK"
+                        if ack_ok
+                        else "State change confirmed by telemetry"
+                    )
+                    return {"ok": True, "tx_count": attempt + 1}
+            if attempt < send_count - 1:
+                time.sleep(TX_RETRY_DELAY_S)
+        return {"ok": False, "error": "State change not confirmed", "tx_count": send_count}
+    except Exception as exc:  # noqa: BLE001
+        logger.log_event(f"State command failed: {exc}")
+        return {"ok": False, "error": str(exc)}
+    finally:
+        state.telemetry_paused = False
+
+
 # Convert numeric status into human readable label -  GUI
 def _status_label(code: int) -> str:
     labels = {
@@ -140,6 +246,16 @@ def _status_label(code: int) -> str:
         6: "Gyro Calib",
     }
     return labels.get(code, f"Mode {code}")
+
+
+def _flight_status_label(code: int) -> str:
+    labels = {
+        0: "Ground",
+        1: "Takeoff",
+        2: "Flying",
+        3: "Landing",
+    }
+    return labels.get(code, f"Flight {code}")
 
 
 
@@ -161,7 +277,6 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             status = payload[idx]
             idx += 1
             updates["flight_state"] = _status_label(status)
-            updates["mode"] = _status_label(status)
 
         elif tlv == TVL_ERR:
             if idx + 2 > len(payload):
@@ -262,6 +377,15 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             updates["tlm_rate"] = payload[idx]
             idx += 1
 
+        elif tlv == TVL_FLIGHT_MODE:
+            if idx + 1 > len(payload):
+                break
+            flight_status = payload[idx]
+            idx += 1
+            updates["flight_phase"] = _flight_status_label(flight_status)
+            updates["mode"] = updates["flight_phase"]
+            raw_updates["flight_mode"] = updates["flight_phase"]
+
         elif tlv == TVL_ANGL:
             if idx + 6 > len(payload):
                 break
@@ -278,9 +402,10 @@ def _parse_tlv_payload(payload: bytes) -> dict:
         elif tlv == TVL_ALT:
             if idx + 2 > len(payload):
                 break
-            alt_cm = (payload[idx] << 8) | payload[idx + 1]
+            # TVL_ALT now carries TOF height in mm as uint16.
+            tof_mm = (payload[idx] << 8) | payload[idx + 1]
             idx += 2
-            updates["baro_alt"] = alt_cm / 100.0
+            raw_updates["uD"] = tof_mm / 10.0
 
         elif tlv == TVL_IMU:
             if idx + 12 > len(payload):
@@ -374,6 +499,7 @@ def _telemetry_worker() -> None:
             continue
         if parsed.src != ID_DRONE or parsed.dst != ID_PC:
             continue
+        state.drone_connected = True
         decoded = _parse_tlv_payload(parsed.payload)
         _apply_telemetry(decoded)
 
@@ -420,6 +546,8 @@ def connect(request: ConnectRequest) -> dict:
         }
     try:
         _serial().connect(request.port, request.baud_rate)
+        # Drop stale frames from previous session before status/telemetry handling.
+        _serial().reset_input()
         state.port = request.port
         state.baud_rate = request.baud_rate
         state.error_tx_streak = 0
@@ -484,12 +612,28 @@ def pair() -> dict:
     return run_pairing(_serial(), state, logger)
 
 
+@app.post("/drone/arm")
+def drone_arm() -> dict:
+    return _send_drone_state(TVL_STATE_ARM)
+
+
+@app.post("/drone/fly")
+def drone_fly() -> dict:
+    return _send_drone_state(TVL_STATE_FLY)
+
+
+@app.post("/drone/fly_over")
+def drone_fly_over() -> dict:
+    return _send_drone_state(TVL_STATE_FLY_OVER)
+
+
 # Read pairing configuration
 @app.get("/pair_config")
 def pair_config() -> dict:
     return {
         "max_retransmits": state.max_retransmits,
         "require_status_ack": state.require_status_ack,
+        "telemetry_confirms_connection": state.telemetry_confirms_connection,
     }
 
 
@@ -502,10 +646,14 @@ def update_pair_config(payload: dict) -> dict:
     require_status_ack = payload.get("require_status_ack")
     if isinstance(require_status_ack, bool):
         state.require_status_ack = require_status_ack
+    telemetry_confirms_connection = payload.get("telemetry_confirms_connection")
+    if isinstance(telemetry_confirms_connection, bool):
+        state.telemetry_confirms_connection = telemetry_confirms_connection
     state.save_config()
     return {
         "max_retransmits": state.max_retransmits,
         "require_status_ack": state.require_status_ack,
+        "telemetry_confirms_connection": state.telemetry_confirms_connection,
     }
 
 

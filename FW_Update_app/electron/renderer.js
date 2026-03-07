@@ -22,6 +22,9 @@ const crcMatch = document.getElementById("crcMatch");
 const maxRetransmitsInput = document.getElementById("maxRetransmits");
 const saveRetriesBtn = document.getElementById("saveRetries");
 const requireStatusAckInput = document.getElementById("requireStatusAck");
+const telemetryConfirmsConnectionInput = document.getElementById(
+  "telemetryConfirmsConnection"
+);
 const txErrorCount = document.getElementById("txErrorCount");
 const txErrorStreak = document.getElementById("txErrorStreak");
 
@@ -303,6 +306,13 @@ async function refreshRetryConfig() {
     if (requireStatusAckInput && typeof state.require_status_ack === "boolean") {
       requireStatusAckInput.checked = state.require_status_ack;
     }
+    if (
+      telemetryConfirmsConnectionInput &&
+      typeof state.telemetry_confirms_connection === "boolean"
+    ) {
+      telemetryConfirmsConnectionInput.checked =
+        state.telemetry_confirms_connection;
+    }
   } catch {
     // ignore if main backend isn't running
   }
@@ -336,6 +346,9 @@ if (saveRetriesBtn && maxRetransmitsInput) {
           require_status_ack: requireStatusAckInput
             ? requireStatusAckInput.checked
             : undefined,
+          telemetry_confirms_connection: telemetryConfirmsConnectionInput
+            ? telemetryConfirmsConnectionInput.checked
+            : undefined,
         }),
       });
       if (typeof state.max_retransmits === "number") {
@@ -343,6 +356,13 @@ if (saveRetriesBtn && maxRetransmitsInput) {
       }
       if (requireStatusAckInput && typeof state.require_status_ack === "boolean") {
         requireStatusAckInput.checked = state.require_status_ack;
+      }
+      if (
+        telemetryConfirmsConnectionInput &&
+        typeof state.telemetry_confirms_connection === "boolean"
+      ) {
+        telemetryConfirmsConnectionInput.checked =
+          state.telemetry_confirms_connection;
       }
     } catch {
       // ignore if main backend isn't running

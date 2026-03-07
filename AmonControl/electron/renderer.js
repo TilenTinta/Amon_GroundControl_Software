@@ -334,26 +334,55 @@ function bindTelemetryControls() {
     return;
   }
   startFlightBtn.classList.toggle("is-disabled", !isArmed);
-  startFlightBtn.addEventListener("click", () => {
+  startFlightBtn.addEventListener("click", async () => {
     if (!isArmed) {
       showWarning("Arm the vehicle before starting flight.");
       return;
     }
     if (!missionRunning) {
+      try {
+        const result = await fetchJson("/drone/fly", { method: "POST" });
+        if (!result || !result.ok) {
+          showWarning((result && result.error) || "Failed to send fly command.");
+          return;
+        }
+      } catch (error) {
+        showWarning("Failed to send fly command.");
+        return;
+      }
       missionRunning = true;
       missionStart = Date.now();
       startFlightBtn.textContent = "Stop Flight";
-      fetchJson("/ping", { method: "POST" }).catch((error) => {
-        console.warn("Ping failed", error);
-      });
     } else {
+      try {
+        const result = await fetchJson("/drone/fly_over", { method: "POST" });
+        if (!result || !result.ok) {
+          showWarning((result && result.error) || "Failed to send fly-over command.");
+          return;
+        }
+      } catch (error) {
+        showWarning("Failed to send fly-over command.");
+        return;
+      }
       missionRunning = false;
       missionElapsed += Date.now() - missionStart;
       startFlightBtn.textContent = "Start Flight";
     }
   });
   if (armBtn) {
-    armBtn.addEventListener("click", () => {
+    armBtn.addEventListener("click", async () => {
+      if (!isArmed) {
+        try {
+          const result = await fetchJson("/drone/arm", { method: "POST" });
+          if (!result || !result.ok) {
+            showWarning((result && result.error) || "Failed to send arm command.");
+            return;
+          }
+        } catch (error) {
+          showWarning("Failed to send arm command.");
+          return;
+        }
+      }
       isArmed = !isArmed;
       armBtn.textContent = isArmed ? "Disarm" : "Arm";
       armBtn.classList.toggle("armed", isArmed);
@@ -483,6 +512,7 @@ async function pollLinkStatus() {
 function zeroTelemetry() {
   return {
     flight_state: "Idle",
+    flight_phase: "-",
     battery_v: 0,
     battery_main_v: 0,
     battery_motor_v: 0,
@@ -536,14 +566,49 @@ function format(value, decimals = 1) {
   return Number(value).toFixed(decimals);
 }
 
+function syncControlStateFromTelemetry(stateLabel) {
+  const state = String(stateLabel || "").trim().toLowerCase();
+  const armBtn = document.getElementById("armBtn");
+
+  const armedByState = state === "arm" || state === "fly";
+  const flyingByState = state === "fly";
+
+  isArmed = armedByState;
+
+  if (armBtn) {
+    armBtn.textContent = isArmed ? "Disarm" : "Arm";
+    armBtn.classList.toggle("armed", isArmed);
+    armBtn.classList.toggle("ghost", !isArmed);
+  }
+
+  if (startFlightBtn) {
+    startFlightBtn.classList.toggle("is-disabled", !isArmed);
+    startFlightBtn.textContent = flyingByState ? "Stop Flight" : "Start Flight";
+  }
+
+  // Keep mission timer state aligned with reported flight mode.
+  if (flyingByState && !missionRunning) {
+    missionRunning = true;
+    missionStart = Date.now();
+  } else if (!flyingByState && missionRunning) {
+    missionRunning = false;
+    missionElapsed += Date.now() - missionStart;
+  }
+}
+
 function updateTelemetry(data, cacheUpdate = true) {
   const t = data || zeroTelemetry();
   if (data && cacheUpdate) {
     latestTelemetry = t;
-    orientationTarget = { ...t.orientation };
+    if (activeDrone !== "talon") {
+      orientationTarget = { ...(t.orientation || { roll: 0, pitch: 0, yaw: 0 }) };
+    }
   } else if (data) {
-    orientationTarget = { ...t.orientation };
+    if (activeDrone !== "talon") {
+      orientationTarget = { ...(t.orientation || { roll: 0, pitch: 0, yaw: 0 }) };
+    }
   }
+  syncControlStateFromTelemetry(t.flight_state || t.mode);
   if (fields.flightState) fields.flightState.textContent = t.flight_state;
   if (fields.battVoltageMain) {
     const mainV = t.battery_main_v || t.battery_v || 0;
@@ -567,7 +632,10 @@ function updateTelemetry(data, cacheUpdate = true) {
   if (fields.groundSpeed) fields.groundSpeed.textContent = `${format(t.packet_loss ?? 0, 0)}`;
   if (fields.climbRate) fields.climbRate.textContent = `${format(t.link_quality ?? 0, 0)}`;
   if (fields.heading) fields.heading.textContent = `${format(t.orientation.yaw, 1)} deg`;
-  if (fields.mode) fields.mode.textContent = t.mode;
+  if (fields.mode) {
+    const phase = typeof t.flight_phase === "string" ? t.flight_phase : "";
+    fields.mode.textContent = phase && phase !== "-" ? phase : (t.mode || t.flight_state || "--");
+  }
   if (fields.throttleValue) fields.throttleValue.textContent = `${format(t.throttle, 0)} %`;
   if (fields.posX) fields.posX.textContent = `${format(t.position.x, 2)} m`;
   if (fields.posY) fields.posY.textContent = `${format(t.position.y, 2)} m`;
@@ -747,11 +815,13 @@ function loadModel(drone) {
 function animate() {
   if (renderer && scene && camera) {
     if (modelMesh) {
-      orientation = {
-        roll: orientation.roll + (orientationTarget.roll - orientation.roll) * MODEL_RESPONSE,
-        pitch: orientation.pitch + (orientationTarget.pitch - orientation.pitch) * MODEL_RESPONSE,
-        yaw: orientation.yaw + (orientationTarget.yaw - orientation.yaw) * MODEL_RESPONSE,
-      };
+      if (activeDrone !== "talon") {
+        orientation = {
+          roll: orientation.roll + (orientationTarget.roll - orientation.roll) * MODEL_RESPONSE,
+          pitch: orientation.pitch + (orientationTarget.pitch - orientation.pitch) * MODEL_RESPONSE,
+          yaw: orientation.yaw + (orientationTarget.yaw - orientation.yaw) * MODEL_RESPONSE,
+        };
+      }
       const roll = orientation.roll || 0;
       const pitch = orientation.pitch || 0;
       const yaw = orientation.yaw || 0;
@@ -904,17 +974,22 @@ function updateCharts() {
       }
     : (() => {
         const t = latestTelemetry || zeroTelemetry();
+        const gyro = t.gyro || {};
+        const accel = t.accel || {};
+        const ori = t.orientation || {};
+        const pos = t.position || {};
+        const vel = t.velocity || {};
         const useAmonAxisMap = activeDrone === "amon";
-        const roll = t.orientation.roll;
-        const pitch = t.orientation.pitch;
-        const yaw = t.orientation.yaw;
+        const roll = Number(ori.roll || 0);
+        const pitch = Number(ori.pitch || 0);
+        const yaw = Number(ori.yaw || 0);
         return {
-          gx: t.gyro.gx,
-          gy: t.gyro.gy,
-          gz: t.gyro.gz,
-          ax: t.accel.ax,
-          ay: t.accel.ay,
-          az: t.accel.az,
+          gx: Number(gyro.gx || 0),
+          gy: Number(gyro.gy || 0),
+          gz: Number(gyro.gz || 0),
+          ax: Number(accel.ax || 0),
+          ay: Number(accel.ay || 0),
+          az: Number(accel.az || 0),
           oriX: useAmonAxisMap ? yaw : roll,
           oriY: pitch,
           oriZ: useAmonAxisMap ? roll : yaw,
@@ -923,13 +998,13 @@ function updateCharts() {
           oriZRef: 0,
           alt: (t.raw && typeof t.raw.uD === "number" ? t.raw.uD : 0),
           altRef: 0,
-          posX: t.position.x,
-          posY: t.position.y,
+          posX: Number(pos.x || 0),
+          posY: Number(pos.y || 0),
           posRef: 0,
-          velX: t.velocity.vx,
-          velY: t.velocity.vy,
+          velX: Number(vel.vx || 0),
+          velY: Number(vel.vy || 0),
           velRef: 0,
-          thr: t.throttle,
+          thr: Number(t.throttle || 0),
           thrRef: 0,
         };
       })();
@@ -948,16 +1023,22 @@ function updateCharts() {
 }
 
 function chartLoop(now) {
-  const elapsed = now - lastChartTick;
-  if (elapsed >= CHART_INTERVAL_MS) {
-    lastChartTick = now - (elapsed % CHART_INTERVAL_MS);
-    updateCharts();
+  try {
+    const elapsed = now - lastChartTick;
+    if (elapsed >= CHART_INTERVAL_MS) {
+      lastChartTick = now - (elapsed % CHART_INTERVAL_MS);
+      updateCharts();
+    }
+  } catch (error) {
+    console.error("Chart loop error", error);
+  } finally {
+    requestAnimationFrame(chartLoop);
   }
-  requestAnimationFrame(chartLoop);
 }
 
 function scheduleTelemetryPoll() {
-  if (!droneOnline || pairingInProgress || telemetryInFlight) {
+  // Poll telemetry whenever link is connected, independent of drone state/pair UI state.
+  if (!connectedPort || pairingInProgress || telemetryInFlight) {
     setTimeout(scheduleTelemetryPoll, 20);
     return;
   }
@@ -975,7 +1056,7 @@ function scheduleTelemetryPoll() {
     })
     .finally(() => {
       telemetryInFlight = false;
-      setTimeout(scheduleTelemetryPoll, 100);
+      setTimeout(scheduleTelemetryPoll, 20);
     });
 }
 

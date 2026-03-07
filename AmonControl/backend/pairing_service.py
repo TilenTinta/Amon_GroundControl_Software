@@ -6,17 +6,21 @@ from .logger import DataLogger
 from .protocol import (
     FLAG_ACK,
     FLAG_DATA,
+    FLAG_STREAM,
     ID_DRONE,
     ID_PC,
     OPT_ERROR_TX,
     OPT_PAIR_START,
     OPT_PAIR_STATUS,
+    OPT_TELEMETRY,
     PROTOCOL_VER,
     build_frame,
     parse_frame,
 )
 from .serial_comm import SerialManager
 from .state import LinkState
+
+TX_RETRY_DELAY_S = 0.1
 
 
 def _send_and_wait(
@@ -26,6 +30,7 @@ def _send_and_wait(
     opcode: int,
     logger: DataLogger | None = None,
     timeout_s: float = 1.0,
+    allow_telemetry_confirm: bool = False,
 ) -> dict:
     frame = build_frame(
         version=PROTOCOL_VER,
@@ -39,6 +44,8 @@ def _send_and_wait(
         logger.log_frame("pairing-tx", frame)
     attempts = 0
     while attempts <= state.max_retransmits:
+        if attempts > 0:
+            time.sleep(TX_RETRY_DELAY_S)
         serial.reset_input()
         serial.write(frame)
         rx_buf = bytearray()
@@ -66,6 +73,20 @@ def _send_and_wait(
                         logger.log_event("Pairing status ACK received")
                     logger.log_frame("pairing-ack", response)
                 return {"ok": True}
+            if (
+                allow_telemetry_confirm
+                and parsed.opcode == OPT_TELEMETRY
+                and parsed.src == ID_DRONE
+                and parsed.dst == ID_PC
+                and (
+                    parsed.flags == FLAG_STREAM
+                    or parsed.flags == FLAG_DATA
+                )
+            ):
+                state.error_tx_streak = 0
+                if logger:
+                    logger.log_event("Pairing confirmed by telemetry reception")
+                return {"ok": True, "confirmed_by": "telemetry"}
             if parsed.flags & FLAG_ERR and parsed.opcode == OPT_ERROR_TX:
                 state.error_tx_count += 1
                 state.error_tx_streak += 1
@@ -92,7 +113,13 @@ def run_pairing(
             return start
         if not state.require_status_ack:
             state.drone_connected = True
-        status = _send_and_wait(serial, state, opcode=OPT_PAIR_STATUS, logger=logger)
+        status = _send_and_wait(
+            serial,
+            state,
+            opcode=OPT_PAIR_STATUS,
+            logger=logger,
+            allow_telemetry_confirm=state.telemetry_confirms_connection,
+        )
         if not status.get("ok"):
             if state.require_status_ack:
                 return status

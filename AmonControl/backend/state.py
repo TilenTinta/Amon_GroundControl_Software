@@ -30,6 +30,7 @@ class LinkState:
     drone_connected: bool = False
     last_telemetry: dict = field(default_factory=dict)
     require_status_ack: bool = True
+    telemetry_confirms_connection: bool = True
     telemetry_paused: bool = False
     telemetry_lock: threading.Lock = field(default_factory=threading.Lock)
     last_tlm_ts: float = 0.0
@@ -58,11 +59,16 @@ class LinkState:
         if isinstance(require_status_ack, bool):
             self.require_status_ack = require_status_ack
 
+        telemetry_confirms_connection = data.get("telemetry_confirms_connection")
+        if isinstance(telemetry_confirms_connection, bool):
+            self.telemetry_confirms_connection = telemetry_confirms_connection
+
 
     # Save current settings to config.json
     def save_config(self) -> None:
         data = {
             "max_retransmits": self.max_retransmits,
             "require_status_ack": self.require_status_ack,
+            "telemetry_confirms_connection": self.telemetry_confirms_connection,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")

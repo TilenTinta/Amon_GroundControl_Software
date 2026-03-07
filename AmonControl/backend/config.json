@@ -1,4 +1,5 @@
 {
-  "max_retransmits": 3,
-  "require_status_ack": false
+  "max_retransmits": 5,
+  "require_status_ack": false,
+  "telemetry_confirms_connection": true
 }

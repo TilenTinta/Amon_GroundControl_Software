@@ -343,6 +343,15 @@ button:disabled {
   }
 }
 
+.ftdi-reader .row label {
+  min-width: 110px;
+}
+
+.ftdi-reader input[type="text"] {
+  min-width: 340px;
+  flex: 1;
+}
+
 .log-item {
   padding: 8px 10px;
   background: rgba(255, 255, 255, 0.03);

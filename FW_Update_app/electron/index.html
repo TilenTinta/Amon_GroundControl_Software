@@ -204,6 +204,41 @@
           <div class="config-block spacer"></div>
         </div>
       </section>
+
+      <section class="card config-card">
+        <div class="config-header">
+          <h2>Flash Reader</h2>
+          <span class="muted">Read logs from drone flash over FTDI</span>
+        </div>
+        <div class="ftdi-reader">
+          <div class="row">
+            <label for="ftdiPortSelect">FTDI Port</label>
+            <select id="ftdiPortSelect"></select>
+            <label for="ftdiBaudSelect">Baud Rate</label>
+            <select id="ftdiBaudSelect">
+              <option>9600</option>
+              <option>19200</option>
+              <option>57600</option>
+              <option selected>115200</option>
+              <option>230400</option>
+              <option>460800</option>
+            </select>
+            <button id="refreshFtdiPorts" class="ghost" type="button">Refresh</button>
+            <button id="connectFtdiBtn" class="primary" type="button">Connect</button>
+          </div>
+          <div class="row">
+            <label for="logDumpPath">CSV File</label>
+            <input
+              id="logDumpPath"
+              type="text"
+              value="./logs/drone_log.csv"
+              placeholder="C:\\logs\\drone_log.csv"
+            />
+            <button id="browseLogPathBtn" class="ghost" type="button">Browse</button>
+            <button id="dumpLogBtn" class="primary" type="button">Read Flash Log</button>
+          </div>
+        </div>
+      </section>
     </div>
 
     <script src="./renderer.js"></script>

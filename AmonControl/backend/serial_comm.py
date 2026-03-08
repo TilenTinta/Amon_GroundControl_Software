@@ -127,3 +127,34 @@ class SerialManager:
                 self._logger.log_frame("uart-rx", frame)
                 return frame
         return None
+
+
+    # Read raw UART bytes until there is no new data for idle_timeout_s.
+    def read_raw_until_idle(
+        self,
+        idle_timeout_s: float = 1.0,
+        max_duration_s: float = 60.0,
+    ) -> bytes:
+        if not self._serial:
+            return b""
+        start = time.monotonic()
+        last_rx = start
+        out = bytearray()
+        while (time.monotonic() - start) < max_duration_s:
+            waiting = 0
+            try:
+                waiting = int(self._serial.in_waiting)
+            except Exception:  # noqa: BLE001
+                break
+
+            if waiting > 0:
+                chunk = self._serial.read(waiting)
+                if chunk:
+                    out.extend(chunk)
+                    last_rx = time.monotonic()
+                continue
+
+            if out and (time.monotonic() - last_rx) >= idle_timeout_s:
+                break
+            time.sleep(0.01)
+        return bytes(out)

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
 const fs = require("fs");
@@ -132,4 +132,20 @@ app.on("before-quit", () => {
 
 ipcMain.handle("open-fw-updater", () => {
   openFirmwareUpdater();
+});
+
+ipcMain.handle("select-log-save-path", async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const result = await dialog.showSaveDialog(win || undefined, {
+    title: "Save Flash Log CSV",
+    defaultPath: "drone_log.csv",
+    filters: [
+      { name: "CSV Files", extensions: ["csv"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  if (result.canceled || !result.filePath) {
+    return "";
+  }
+  return result.filePath;
 });

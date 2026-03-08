@@ -11,6 +11,9 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import csv
+from pathlib import Path
+import struct
 import threading
 import time
 
@@ -26,6 +29,7 @@ from backend.protocol import (
     ID_PC,
     PROTOCOL_VER,
     OPT_DRONE_SET_STATE,
+    OPT_LOG_DUMP,
     OPT_TELEMETRY,
     OPT_TELEMETRY_STREAM,
     TVL_ALT,
@@ -69,11 +73,44 @@ class ConnectRequest(BaseModel):
     baud_rate: int
 
 
+class LogDumpRequest(BaseModel):
+    output_path: str
+
+
+class FtdiLogDumpRequest(BaseModel):
+    output_path: str
+
+
 # Global state and logger shared across endpoints
 state = LinkState()
 logger = DataLogger()
+ftdi_serial = SerialManager()
+ftdi_port = ""
+ftdi_baud_rate = 0
 TX_RETRY_DELAY_S = 0.1
 STATE_CONFIRM_TIMEOUT_S = 0.25
+LOG_RECORD_STRUCT = struct.Struct("<IfffH2xffffffHHHHHBxI")
+LOG_DUMP_MAX_DURATION_S = 10.0
+LOG_CSV_HEADERS = [
+    "timestamp",
+    "pitch",
+    "roll",
+    "yaw",
+    "gyro_temp",
+    "accel_x",
+    "accel_y",
+    "accel_z",
+    "gyro_x",
+    "gyro_y",
+    "gyro_z",
+    "height_tof_mm",
+    "height_baro_m",
+    "battery_main_voltage",
+    "battery_edf_voltage",
+    "temperature",
+    "humidity",
+    "pressure",
+]
 
 
 def _zero_payload() -> dict:
@@ -135,6 +172,35 @@ def _sync_connection_state() -> None:
 # Helper to access the serial manager
 def _serial() -> SerialManager:
     return state.serial
+
+
+def _ftdi_is_connected() -> bool:
+    return ftdi_serial.check_connection()
+
+
+def _decode_log_records(raw: bytes) -> tuple[list[tuple], int]:
+    rec_size = LOG_RECORD_STRUCT.size
+    total = len(raw) // rec_size
+    valid = raw[: total * rec_size]
+    records = []
+    for idx in range(total):
+        start = idx * rec_size
+        end = start + rec_size
+        records.append(LOG_RECORD_STRUCT.unpack(valid[start:end]))
+    leftover = len(raw) - len(valid)
+    return records, leftover
+
+
+def _write_log_csv(path_text: str, records: list[tuple]) -> Path:
+    out_path = Path(path_text).expanduser()
+    if not out_path.is_absolute():
+        out_path = Path.cwd() / out_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(LOG_CSV_HEADERS)
+        writer.writerows(records)
+    return out_path
 
 
 def _send_drone_state(state_code: int) -> dict:
@@ -625,6 +691,145 @@ def drone_fly() -> dict:
 @app.post("/drone/fly_over")
 def drone_fly_over() -> dict:
     return _send_drone_state(TVL_STATE_FLY_OVER)
+
+
+@app.post("/log_dump")
+def log_dump(request: LogDumpRequest) -> dict:
+    _sync_connection_state()
+    if not _serial().is_connected:
+        return {"ok": False, "error": "Not connected"}
+    if not request.output_path.strip():
+        return {"ok": False, "error": "Output path is empty"}
+
+    try:
+        state.telemetry_paused = True
+        _serial().reset_input()
+        frame = build_frame(
+            version=PROTOCOL_VER,
+            flags=FLAG_DATA,
+            src=ID_PC,
+            dst=ID_DRONE,
+            opcode=OPT_LOG_DUMP,
+            payload=b"",
+        )
+        _serial().write(frame)
+        logger.log_frame("log-dump-tx", frame)
+
+        raw = _serial().read_raw_until_idle(
+            idle_timeout_s=1.0,
+            max_duration_s=LOG_DUMP_MAX_DURATION_S,
+        )
+        if not raw:
+            return {"ok": False, "error": "No log data received"}
+
+        records, leftover = _decode_log_records(raw)
+        if not records:
+            return {"ok": False, "error": "Received data is not a valid log stream"}
+
+        out_path = _write_log_csv(request.output_path, records)
+        if leftover:
+            logger.log_event(f"Log dump saved with {leftover} trailing bytes ignored")
+        return {
+            "ok": True,
+            "file_path": str(out_path),
+            "records_saved": len(records),
+            "bytes_received": len(raw),
+            "bytes_ignored": leftover,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.log_event(f"Log dump failed: {exc}")
+        return {"ok": False, "error": str(exc)}
+    finally:
+        state.telemetry_paused = False
+
+
+@app.post("/log_dump_ftdi")
+def log_dump_ftdi(request: FtdiLogDumpRequest) -> dict:
+    output_path = (request.output_path or "").strip()
+    if not output_path:
+        return {"ok": False, "error": "Output path is empty"}
+    if not _ftdi_is_connected():
+        return {"ok": False, "error": "FTDI not connected"}
+
+    try:
+        ftdi_serial.reset_input()
+        frame = build_frame(
+            version=PROTOCOL_VER,
+            flags=FLAG_DATA,
+            src=ID_PC,
+            dst=ID_DRONE,
+            opcode=OPT_LOG_DUMP,
+            payload=b"",
+        )
+        ftdi_serial.write(frame)
+        logger.log_frame("log-dump-ftdi-tx", frame)
+
+        raw = ftdi_serial.read_raw_until_idle(
+            idle_timeout_s=1.0,
+            max_duration_s=LOG_DUMP_MAX_DURATION_S,
+        )
+        if not raw:
+            return {"ok": False, "error": "No log data received"}
+
+        records, leftover = _decode_log_records(raw)
+        if not records:
+            return {"ok": False, "error": "Received data is not a valid log stream"}
+
+        out_path = _write_log_csv(output_path, records)
+        if leftover:
+            logger.log_event(f"FTDI log dump saved with {leftover} trailing bytes ignored")
+        return {
+            "ok": True,
+            "file_path": str(out_path),
+            "records_saved": len(records),
+            "bytes_received": len(raw),
+            "bytes_ignored": leftover,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.log_event(f"FTDI log dump failed: {exc}")
+        return {"ok": False, "error": str(exc)}
+
+
+@app.get("/ftdi/ports")
+def ftdi_ports() -> dict:
+    error = None
+    if not ftdi_serial.available:
+        error = "pyserial not installed"
+    return {"ports": ftdi_serial.list_ports(), "error": error}
+
+
+@app.get("/ftdi/status")
+def ftdi_status() -> dict:
+    connected = _ftdi_is_connected()
+    return {
+        "connected": connected,
+        "port": ftdi_port if connected else "",
+        "baud_rate": ftdi_baud_rate if connected else 0,
+    }
+
+
+@app.post("/ftdi/connect")
+def ftdi_connect(request: ConnectRequest) -> dict:
+    global ftdi_port, ftdi_baud_rate
+    if not ftdi_serial.available:
+        return {"ok": False, "error": "pyserial not installed"}
+    try:
+        ftdi_serial.connect(request.port, int(request.baud_rate))
+        ftdi_serial.reset_input()
+        ftdi_port = request.port
+        ftdi_baud_rate = int(request.baud_rate)
+        return {"ok": True, "connected": True, "port": ftdi_port, "baud_rate": ftdi_baud_rate}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/ftdi/disconnect")
+def ftdi_disconnect() -> dict:
+    global ftdi_port, ftdi_baud_rate
+    ftdi_serial.disconnect()
+    ftdi_port = ""
+    ftdi_baud_rate = 0
+    return {"ok": True, "connected": False, "port": "", "baud_rate": 0}
 
 
 # Read pairing configuration

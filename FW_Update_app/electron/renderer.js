@@ -25,8 +25,16 @@ const requireStatusAckInput = document.getElementById("requireStatusAck");
 const telemetryConfirmsConnectionInput = document.getElementById(
   "telemetryConfirmsConnection"
 );
+const ftdiPortSelect = document.getElementById("ftdiPortSelect");
+const ftdiBaudSelect = document.getElementById("ftdiBaudSelect");
+const refreshFtdiPortsBtn = document.getElementById("refreshFtdiPorts");
+const connectFtdiBtn = document.getElementById("connectFtdiBtn");
+const logDumpPathInput = document.getElementById("logDumpPath");
+const browseLogPathBtn = document.getElementById("browseLogPathBtn");
+const dumpLogBtn = document.getElementById("dumpLogBtn");
 const txErrorCount = document.getElementById("txErrorCount");
 const txErrorStreak = document.getElementById("txErrorStreak");
+let ftdiConnected = false;
 
 let allowUpload = true;
 let uploadWasInProgress = false;
@@ -331,6 +339,55 @@ async function refreshRetryStats() {
   }
 }
 
+async function refreshFtdiPorts() {
+  if (!ftdiPortSelect) {
+    return;
+  }
+  try {
+    const state = await fetchMainJson("/ftdi/ports");
+    const ports = (state && state.ports) || [];
+    ftdiPortSelect.innerHTML = "";
+    if (!ports.length) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No ports";
+      ftdiPortSelect.appendChild(option);
+      return;
+    }
+    ports.forEach((port) => {
+      const option = document.createElement("option");
+      option.value = port;
+      option.textContent = port;
+      ftdiPortSelect.appendChild(option);
+    });
+    ftdiPortSelect.value = ports[0];
+  } catch {
+    ftdiPortSelect.innerHTML = "";
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No ports";
+    ftdiPortSelect.appendChild(option);
+  }
+}
+
+async function refreshFtdiStatus() {
+  if (!connectFtdiBtn) {
+    return;
+  }
+  try {
+    const state = await fetchMainJson("/ftdi/status");
+    ftdiConnected = Boolean(state && state.connected);
+    connectFtdiBtn.textContent = ftdiConnected ? "Disconnect" : "Connect";
+    connectFtdiBtn.classList.toggle("danger", ftdiConnected);
+    connectFtdiBtn.classList.toggle("primary", !ftdiConnected);
+  } catch {
+    ftdiConnected = false;
+    connectFtdiBtn.textContent = "Connect";
+    connectFtdiBtn.classList.remove("danger");
+    connectFtdiBtn.classList.add("primary");
+  }
+}
+
 if (saveRetriesBtn && maxRetransmitsInput) {
   saveRetriesBtn.addEventListener("click", async () => {
     const value = Number.parseInt(maxRetransmitsInput.value, 10);
@@ -370,8 +427,115 @@ if (saveRetriesBtn && maxRetransmitsInput) {
   });
 }
 
+if (dumpLogBtn && logDumpPathInput) {
+  dumpLogBtn.addEventListener("click", async () => {
+    const outputPath = (logDumpPathInput.value || "").trim();
+    if (!ftdiConnected) {
+      addLog("Connect FTDI first.");
+      return;
+    }
+    if (!outputPath) {
+      addLog("Set output CSV path before reading flash log.");
+      return;
+    }
+    dumpLogBtn.disabled = true;
+    addLog("Requesting flash log dump...");
+    try {
+      const result = await fetchMainJson("/log_dump_ftdi", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          output_path: outputPath,
+        }),
+      });
+      if (!result || !result.ok) {
+        addLog(`Flash log read failed: ${(result && result.error) || "Unknown error"}`);
+        return;
+      }
+      addLog(
+        `Flash log saved: ${result.records_saved} records -> ${result.file_path}`
+      );
+      window.alert(
+        `Log dump complete.\nSaved ${result.records_saved} records to:\n${result.file_path}`
+      );
+    } catch (error) {
+      addLog(`Flash log read failed: ${error.message}`);
+    } finally {
+      dumpLogBtn.disabled = false;
+    }
+  });
+}
+
+if (refreshFtdiPortsBtn) {
+  refreshFtdiPortsBtn.addEventListener("click", () => {
+    refreshFtdiPorts().catch(() => {});
+  });
+}
+
+if (connectFtdiBtn && ftdiPortSelect && ftdiBaudSelect) {
+  connectFtdiBtn.addEventListener("click", async () => {
+    if (ftdiConnected) {
+      try {
+        await fetchMainJson("/ftdi/disconnect", { method: "POST" });
+        addLog("FTDI disconnected.");
+      } catch (error) {
+        addLog(`FTDI disconnect failed: ${error.message}`);
+      } finally {
+        refreshFtdiStatus().catch(() => {});
+      }
+      return;
+    }
+
+    const port = (ftdiPortSelect.value || "").trim();
+    const baud_rate = Number.parseInt(ftdiBaudSelect.value || "115200", 10);
+    if (!port) {
+      addLog("Select FTDI port first.");
+      return;
+    }
+    if (!Number.isFinite(baud_rate) || baud_rate <= 0) {
+      addLog("Invalid FTDI baud rate.");
+      return;
+    }
+
+    try {
+      const state = await fetchMainJson("/ftdi/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ port, baud_rate }),
+      });
+      if (!state || !state.ok) {
+        addLog(`FTDI connect failed: ${(state && state.error) || "Unknown error"}`);
+      } else {
+        addLog(`FTDI connected: ${state.port} @ ${state.baud_rate}`);
+      }
+    } catch (error) {
+      addLog(`FTDI connect failed: ${error.message}`);
+    } finally {
+      refreshFtdiStatus().catch(() => {});
+    }
+  });
+}
+
+if (browseLogPathBtn && logDumpPathInput) {
+  browseLogPathBtn.addEventListener("click", async () => {
+    try {
+      if (!window.electronAPI || !window.electronAPI.selectLogSavePath) {
+        return;
+      }
+      const selected = await window.electronAPI.selectLogSavePath();
+      if (selected) {
+        logDumpPathInput.value = selected;
+      }
+    } catch {
+      // ignore dialog failures
+    }
+  });
+}
+
 refreshRetryConfig().catch(() => {});
 refreshRetryStats().catch(() => {});
+refreshFtdiPorts().catch(() => {});
+refreshFtdiStatus().catch(() => {});
 setInterval(() => {
   refreshRetryStats().catch(() => {});
 }, 2000);

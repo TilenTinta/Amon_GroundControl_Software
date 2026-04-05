@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; connect-src http://127.0.0.1:8002;"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flight Planning</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app" data-view="planning" data-drone="">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-block">
+            <span class="system-tag">AMON SYSTEM</span>
+            <div class="brand-text">Flight Planning</div>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="topbar-actions">
+            <button id="closeBtn" class="ghost" type="button">Close</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="planning-main">
+        <section class="planning-layout">
+          <section class="panel">
+            <div class="panel-title">Flight Profile</div>
+              <div class="planning-shell">
+              <div class="planning-editor">
+                <div class="editor-card">
+                  <div class="editor-head">
+                    <div class="editor-title">Profile Editor</div>
+                    <div class="editor-actions">
+                      <button id="exportPlanBtn" class="ghost" type="button">Save</button>
+                      <button id="clearPlanBtn" class="ghost" type="button">Clear</button>
+                    </div>
+                  </div>
+                  <div id="profileStatus" class="profile-status hidden" aria-live="polite"></div>
+
+                  <div class="builder-grid editor-grid">
+                    <label class="builder-field">
+                      <span class="builder-label">Profile Name</span>
+                      <input id="editProfileName" class="builder-input" type="text" placeholder="My mission" />
+                    </label>
+                    <label class="builder-field">
+                      <span class="builder-label">Vehicle</span>
+                      <input id="editProfileVehicle" class="builder-input" type="text" placeholder="AMON_drone" />
+                    </label>
+                    <label class="builder-field builder-notes">
+                      <span class="builder-label">Notes</span>
+                      <textarea
+                        id="editProfileNotes"
+                        class="builder-textarea"
+                        placeholder="Checklist, wind limits, camera settings…"
+                        spellcheck="false"
+                      ></textarea>
+                    </label>
+                  </div>
+
+                  <div class="command-builder">
+                    <div class="command-row editor-command-row">
+                      <label class="builder-field command-field">
+                        <span class="builder-label">Add Command</span>
+                        <select id="commandSelect" class="builder-input"></select>
+                      </label>
+                      <button id="addCommandBtn" class="icon-btn builder-add" type="button" aria-label="Add command">
+                        <span class="builder-plus">+</span>
+                      </button>
+                      <div id="commandParams" class="command-params"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="planning-list">
+                <section class="panel steps-panel">
+                  <div class="panel-title">Flight Steps</div>
+                  <div class="profile-list-wrap">
+                    <div class="profile-list-header">
+                      <span>#</span>
+                      <span>Command</span>
+                      <span>Parameters</span>
+                      <span></span>
+                    </div>
+                    <div id="profileList" class="profile-list" role="list"></div>
+                  </div>
+                </section>
+              </div>
+
+              <aside class="planning-side">
+                <div class="planning-side-top">
+                  <div class="panel side-card">
+                    <div class="panel-title">Current</div>
+                    <div class="kv-grid">
+                      <div><span class="label">Name</span><span id="profileName">--</span></div>
+                      <div><span class="label">Vehicle</span><span id="profileVehicle">--</span></div>
+                      <div><span class="label">Commands</span><span id="waypointCount">0</span></div>
+                      <div><span class="label">Max Alt</span><span id="maxAlt">-- m</span></div>
+                    </div>
+                    <div class="profile-notes-wrap">
+                      <div class="profile-notes-title">Notes</div>
+                      <div id="profileNotes" class="profile-notes">--</div>
+                    </div>
+                  </div>
+
+                  <div class="panel side-card">
+                    <div class="panel-title">Import (Optional)</div>
+                    <div class="planning-hint">
+                      Load an existing profile JSON and continue editing it in the editor.
+                    </div>
+                    <div class="side-actions">
+                      <button id="importPlanBtn" class="ghost" type="button">Import JSON</button>
+                    </div>
+                  </div>
+                </div>
+
+                <button id="sendPlanBtn" class="primary side-send" type="button">
+                  Send to Vehicle
+                </button>
+              </aside>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./flight_planning_renderer.js"></script>
+  </body>
+</html>

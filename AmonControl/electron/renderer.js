@@ -330,6 +330,7 @@ function bindTelemetryElements() {
 function bindTelemetryControls() {
   startFlightBtn = document.getElementById("startFlightBtn");
   const armBtn = document.getElementById("armBtn");
+  const flightPlanningBtn = document.getElementById("flightPlanningBtn");
   if (!startFlightBtn) {
     return;
   }
@@ -390,6 +391,16 @@ function bindTelemetryControls() {
       if (startFlightBtn) {
         startFlightBtn.classList.toggle("is-disabled", !isArmed);
       }
+    });
+  }
+
+  if (flightPlanningBtn) {
+    flightPlanningBtn.addEventListener("click", () => {
+      if (window.electronAPI && window.electronAPI.openFlightPlanning) {
+        window.electronAPI.openFlightPlanning();
+        return;
+      }
+      window.open("about:blank#flight-planning", "_blank", "noopener");
     });
   }
 }

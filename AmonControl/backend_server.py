@@ -30,6 +30,7 @@ from backend.protocol import (
     PROTOCOL_VER,
     OPT_DRONE_SET_STATE,
     OPT_LOG_DUMP,
+    OPT_LOG_RM,
     OPT_TELEMETRY,
     OPT_TELEMETRY_STREAM,
     TVL_ALT,
@@ -787,6 +788,41 @@ def log_dump_ftdi(request: FtdiLogDumpRequest) -> dict:
         }
     except Exception as exc:  # noqa: BLE001
         logger.log_event(f"FTDI log dump failed: {exc}")
+        return {"ok": False, "error": str(exc)}
+
+
+@app.post("/log_rm_ftdi")
+def log_rm_ftdi() -> dict:
+    if not _ftdi_is_connected():
+        return {"ok": False, "error": "FTDI not connected"}
+    try:
+        ftdi_serial.reset_input()
+        frame = build_frame(
+            version=PROTOCOL_VER,
+            flags=FLAG_DATA,
+            src=ID_PC,
+            dst=ID_DRONE,
+            opcode=OPT_LOG_RM,
+            payload=b"",
+        )
+        ftdi_serial.write(frame)
+        logger.log_frame("log-rm-ftdi-tx", frame)
+
+        rx_buf = bytearray()
+        response = ftdi_serial.read_frame(timeout_s=1.0, buf=rx_buf)
+        if response:
+            parsed = parse_frame(response)
+            if (
+                parsed
+                and (parsed.flags & FLAG_ACK)
+                and parsed.opcode == OPT_LOG_RM
+                and parsed.src == ID_DRONE
+                and parsed.dst == ID_PC
+            ):
+                return {"ok": True, "ack": True}
+        return {"ok": True, "ack": False}
+    except Exception as exc:  # noqa: BLE001
+        logger.log_event(f"FTDI log remove failed: {exc}")
         return {"ok": False, "error": str(exc)}
 
 

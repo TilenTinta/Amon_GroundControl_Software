@@ -32,6 +32,7 @@ const connectFtdiBtn = document.getElementById("connectFtdiBtn");
 const logDumpPathInput = document.getElementById("logDumpPath");
 const browseLogPathBtn = document.getElementById("browseLogPathBtn");
 const dumpLogBtn = document.getElementById("dumpLogBtn");
+const deleteLogBtn = document.getElementById("deleteLogBtn");
 const txErrorCount = document.getElementById("txErrorCount");
 const txErrorStreak = document.getElementById("txErrorStreak");
 let ftdiConnected = false;
@@ -462,6 +463,38 @@ if (dumpLogBtn && logDumpPathInput) {
       addLog(`Flash log read failed: ${error.message}`);
     } finally {
       dumpLogBtn.disabled = false;
+    }
+  });
+}
+
+if (deleteLogBtn) {
+  deleteLogBtn.addEventListener("click", async () => {
+    if (!ftdiConnected) {
+      addLog("Connect FTDI first.");
+      return;
+    }
+    const confirmed = window.confirm("Delete flight log from device flash?");
+    if (!confirmed) {
+      return;
+    }
+    deleteLogBtn.disabled = true;
+    addLog("Sending log delete command...");
+    try {
+      const result = await fetchMainJson("/log_rm_ftdi", { method: "POST" });
+      if (!result || !result.ok) {
+        addLog(`Delete log failed: ${(result && result.error) || "Unknown error"}`);
+        return;
+      }
+      addLog(result.ack ? "Log delete acknowledged." : "Log delete command sent.");
+      window.alert(
+        result.ack
+          ? "Flight log delete confirmed by device."
+          : "Flight log delete command sent."
+      );
+    } catch (error) {
+      addLog(`Delete log failed: ${error.message}`);
+    } finally {
+      deleteLogBtn.disabled = false;
     }
   });
 }

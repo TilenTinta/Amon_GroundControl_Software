@@ -3,7 +3,16 @@ const importPlanBtn = document.getElementById("importPlanBtn");
 const clearPlanBtn = document.getElementById("clearPlanBtn");
 const exportPlanBtn = document.getElementById("exportPlanBtn");
 const sendPlanBtn = document.getElementById("sendPlanBtn");
+const clearPathBtn = document.getElementById("clearPathBtn");
 const profileStatus = document.getElementById("profileStatus");
+const errorModal = document.getElementById("errorModal");
+const errorMessage = document.getElementById("errorMessage");
+const errorCloseBtn = document.getElementById("errorCloseBtn");
+const errorOkBtn = document.getElementById("errorOkBtn");
+const infoModal = document.getElementById("infoModal");
+const infoMessage = document.getElementById("infoMessage");
+const infoCloseBtn = document.getElementById("infoCloseBtn");
+const infoOkBtn = document.getElementById("infoOkBtn");
 const profileName = document.getElementById("profileName");
 const profileVehicle = document.getElementById("profileVehicle");
 const profileNotes = document.getElementById("profileNotes");
@@ -18,6 +27,10 @@ const commandParams = document.getElementById("commandParams");
 const addCommandBtn = document.getElementById("addCommandBtn");
 
 let currentProfile = null;
+
+const backendUrl = window.electronAPI
+  ? window.electronAPI.backendUrl
+  : "http://127.0.0.1:8002";
 
 const COMMAND_DEFS = [
   { id: "COMM_TAKE_OFF", label: "Take off", params: [{ key: "height_cm", label: "Height (cm)" }] },
@@ -83,15 +96,24 @@ const COMMAND_DEFS = [
     id: "COMM_HOVER",
     label: "Hover",
     params: [
-      { key: "time_s", label: "Time (s)" },
       { key: "height_cm", label: "Height (cm)" },
+      { key: "time_s", label: "Time (s)" },
     ],
   },
   {
     id: "COMM_FOLLOW",
     label: "Follow",
     params: [
-      { key: "follow_mode", label: "Mode (0/1/2)" },
+      {
+        key: "follow_mode",
+        label: "Follow mode",
+        type: "select",
+        options: [
+          { value: 0, label: "FOLLOW_MODE_GPS" },
+          { value: 1, label: "FOLLOW_MODE_LINE" },
+          { value: 2, label: "FOLLOW_MODE_ARUCO" },
+        ],
+      },
       { key: "distance_cm", label: "Distance (cm)" },
       { key: "timeout_s", label: "Timeout (s)" },
     ],
@@ -100,7 +122,19 @@ const COMMAND_DEFS = [
     id: "COMM_ACTION",
     label: "Action",
     params: [
-      { key: "action_id", label: "Action ID" },
+      {
+        key: "action_id",
+        label: "Action ID",
+        type: "select",
+        options: [
+          { value: 0, label: "ACTION_TAKE_PHOTO" },
+          { value: 1, label: "ACTION_VIDEO_START" },
+          { value: 2, label: "ACTION_VIDEO_STOP" },
+          { value: 3, label: "ACTION_ACTUATOR" },
+          { value: 4, label: "ACTION_LED_ON" },
+          { value: 5, label: "ACTION_LED_OFF" },
+        ],
+      },
       { key: "parameter1", label: "Param 1" },
       { key: "parameter2", label: "Param 2" },
     ],
@@ -125,6 +159,52 @@ function setStatus(message) {
   const text = message || "";
   profileStatus.textContent = text;
   profileStatus.classList.toggle("hidden", !text);
+}
+
+function showError(message) {
+  setStatus(message);
+  if (errorMessage) {
+    errorMessage.textContent = message;
+  }
+  if (errorModal) {
+    errorModal.classList.remove("hidden");
+  } else {
+    window.alert(message);
+  }
+}
+
+function hideError() {
+  if (errorModal) {
+    errorModal.classList.add("hidden");
+  }
+}
+
+function showInfo(message) {
+  setStatus(message);
+  if (infoMessage) {
+    infoMessage.textContent = message;
+  }
+  if (infoModal) {
+    infoModal.classList.remove("hidden");
+  }
+}
+
+function hideInfo() {
+  if (infoModal) {
+    infoModal.classList.add("hidden");
+  }
+}
+
+async function postJson(path, body) {
+  const response = await fetch(`${backendUrl}${path}`, {
+    method: "POST",
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    throw new Error("Request failed");
+  }
+  return response.json();
 }
 
 function normalizeCommandName(value) {
@@ -185,6 +265,38 @@ function clampInt(value, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function followModeName(value) {
+  switch (clampInt(value, -1)) {
+    case 0:
+      return "FOLLOW_MODE_GPS";
+    case 1:
+      return "FOLLOW_MODE_LINE";
+    case 2:
+      return "FOLLOW_MODE_ARUCO";
+    default:
+      return null;
+  }
+}
+
+function actionIdName(value) {
+  switch (clampInt(value, -1)) {
+    case 0:
+      return "ACTION_TAKE_PHOTO";
+    case 1:
+      return "ACTION_VIDEO_START";
+    case 2:
+      return "ACTION_VIDEO_STOP";
+    case 3:
+      return "ACTION_ACTUATOR";
+    case 4:
+      return "ACTION_LED_ON";
+    case 5:
+      return "ACTION_LED_OFF";
+    default:
+      return null;
+  }
+}
+
 function getDefForCommand(command) {
   const id = normalizeCommandName(command);
   return COMMAND_DEFS.find((d) => d.id === id) || null;
@@ -222,12 +334,25 @@ function renderCommandParams(command) {
     title.className = "builder-label";
     title.textContent = p.label;
 
-    const input = document.createElement("input");
-    input.className = "builder-input";
-    input.type = "number";
-    input.inputMode = "numeric";
-    input.dataset.key = p.key;
-    input.value = "0";
+    let input = null;
+    if (p.type === "select") {
+      input = document.createElement("select");
+      input.className = "builder-input";
+      input.dataset.key = p.key;
+      (p.options || []).forEach((opt) => {
+        const option = document.createElement("option");
+        option.value = String(opt.value);
+        option.textContent = opt.label;
+        input.appendChild(option);
+      });
+    } else {
+      input = document.createElement("input");
+      input.className = "builder-input";
+      input.type = "number";
+      input.inputMode = "numeric";
+      input.dataset.key = p.key;
+      input.value = "0";
+    }
 
     label.appendChild(title);
     label.appendChild(input);
@@ -238,7 +363,7 @@ function renderCommandParams(command) {
 function readCommandParams() {
   const data = {};
   if (!commandParams) return data;
-  const inputs = commandParams.querySelectorAll("input[data-key]");
+  const inputs = commandParams.querySelectorAll("input[data-key], select[data-key]");
   inputs.forEach((node) => {
     const key = node.dataset.key;
     if (!key) return;
@@ -269,11 +394,11 @@ function formatParams(command, data) {
     case "COMM_WAIT":
       return `time_s=${d.time_s ?? "--"}`;
     case "COMM_HOVER":
-      return `time_s=${d.time_s ?? "--"}, height_cm=${d.height_cm ?? "--"}`;
+      return `height_cm=${d.height_cm ?? "--"}, time_s=${d.time_s ?? "--"}`;
     case "COMM_FOLLOW":
-      return `follow_mode=${d.follow_mode ?? "--"}, distance_cm=${d.distance_cm ?? "--"}, timeout_s=${d.timeout_s ?? "--"}`;
+      return `follow_mode=${followModeName(d.follow_mode) || d.follow_mode || "--"}, distance_cm=${d.distance_cm ?? "--"}, timeout_s=${d.timeout_s ?? "--"}`;
     case "COMM_ACTION":
-      return `action_id=${d.action_id ?? "--"}, parameter1=${d.parameter1 ?? "--"}, parameter2=${d.parameter2 ?? "--"}`;
+      return `action_id=${actionIdName(d.action_id) || d.action_id || "--"}, parameter1=${d.parameter1 ?? "--"}, parameter2=${d.parameter2 ?? "--"}`;
     case "COMM_RETURN_HOME":
       return `height_cm=${d.height_cm ?? "--"}, speed_cm_s=${d.speed_cm_s ?? "--"}`;
     default:
@@ -449,7 +574,45 @@ if (exportPlanBtn) {
 
 if (sendPlanBtn) {
   sendPlanBtn.addEventListener("click", () => {
-    setStatus("Send-to-vehicle is not wired yet.");
+    if (!currentProfile || !Array.isArray(currentProfile.commands) || currentProfile.commands.length === 0) {
+      setStatus("No commands to send.");
+      return;
+    }
+    setStatus("Sending flight path...");
+    postJson("/drone/flight_path", { commands: currentProfile.commands })
+      .then((result) => {
+        if (!result || !result.ok) {
+          const base = (result && result.error) || "Failed to send flight path.";
+          const details =
+            result && typeof result.failed_index === "number"
+              ? `Step ${result.failed_index} failed.`
+              : "";
+          showError(details ? `${base}\n${details}` : base);
+          return;
+        }
+        showInfo(`Sent ${result.steps_sent ?? currentProfile.commands.length} steps.`);
+      })
+      .catch(() => {
+        showError("Failed to send flight path.");
+      });
+  });
+}
+
+if (clearPathBtn) {
+  clearPathBtn.addEventListener("click", () => {
+    setStatus("Clearing current path...");
+    postJson("/drone/fpath_clear")
+      .then((result) => {
+        if (!result || !result.ok) {
+          const base = (result && result.error) || "Failed to clear current path.";
+          showError(base);
+          return;
+        }
+        showInfo("Current path cleared.");
+      })
+      .catch(() => {
+        showError("Failed to clear current path.");
+      });
   });
 }
 
@@ -534,3 +697,8 @@ async function restoreFromMainCache() {
 }
 
 restoreFromMainCache();
+
+if (errorCloseBtn) errorCloseBtn.addEventListener("click", hideError);
+if (errorOkBtn) errorOkBtn.addEventListener("click", hideError);
+if (infoCloseBtn) infoCloseBtn.addEventListener("click", hideInfo);
+if (infoOkBtn) infoOkBtn.addEventListener("click", hideInfo);

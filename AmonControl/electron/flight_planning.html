@@ -119,14 +119,49 @@
                   </div>
                 </div>
 
-                <button id="sendPlanBtn" class="primary side-send" type="button">
-                  Send to Vehicle
-                </button>
+                <div class="side-bottom">
+                  <button id="clearPathBtn" class="ghost side-send" type="button">
+                    Clear current path
+                  </button>
+                  <button id="sendPlanBtn" class="primary side-send" type="button">
+                    Send to Vehicle
+                  </button>
+                </div>
               </aside>
             </div>
           </section>
         </section>
       </main>
+    </div>
+
+    <div id="errorModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="errorTitle">
+      <div class="modal-card modal-compact">
+        <div class="modal-header">
+          <div id="errorTitle" class="modal-title">Flight Path Error</div>
+          <button id="errorCloseBtn" class="icon-btn" type="button" aria-label="Close">
+            <span class="close-x">×</span>
+          </button>
+        </div>
+        <div id="errorMessage" class="profile-notes"></div>
+        <div class="editor-actions" style="justify-content:flex-end;">
+          <button id="errorOkBtn" class="primary" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="infoModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="infoTitle">
+      <div class="modal-card modal-compact">
+        <div class="modal-header">
+          <div id="infoTitle" class="modal-title">Success</div>
+          <button id="infoCloseBtn" class="icon-btn" type="button" aria-label="Close">
+            <span class="close-x">×</span>
+          </button>
+        </div>
+        <div id="infoMessage" class="profile-notes"></div>
+        <div class="editor-actions" style="justify-content:flex-end;">
+          <button id="infoOkBtn" class="primary" type="button">OK</button>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="./flight_planning_renderer.js"></script>

@@ -1,0 +1,30 @@
+{
+  "schema": "amon.flight_profile.v1",
+  "name": "Amon_basic_hop",
+  "vehicle": "Amon",
+  "notes": "Basic takeoff, hover and land profile",
+  "commands": [
+    {
+      "command_id": 0,
+      "command": "COMM_TAKE_OFF",
+      "data": {
+        "height_cm": 100
+      }
+    },
+    {
+      "command_id": 1,
+      "command": "COMM_HOVER",
+      "data": {
+        "time_s": 20,
+        "height_cm": 100
+      }
+    },
+    {
+      "command_id": 2,
+      "command": "COMM_LAND",
+      "data": {
+        "delay_s": 0
+      }
+    }
+  ]
+}

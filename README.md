@@ -30,7 +30,7 @@ Part of the Amon Lander project:
 >  https://github.com/TilenTinta/Amon_Link
 
 
-
+---
 > [!CAUTION]
 > The baseline for this software was originally written in Python "by hand" as a terminal application. Later, when development of the GUI began and the project was switched from QT to the Electron framework, the complete workflow was implemented using AI tools (OpenAI Codex agent). **This approach is by no means recommended or supported from my side**, but it served as an interesting experiment to explore what can be achieved with AI tools when there is a clear application idea and precise guidelines on how and what the agent needs to do.
 

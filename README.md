@@ -21,7 +21,7 @@ Desktop ground control station for the Amon Lander. The app uses an Electron UI 
 **Amon Ground Control** is the operator desktop app for selecting a vehicle, connecting to the link, and monitoring live telemetry. It renders a 3D orientation model, a telemetry status panel, and multiple live charts for IMU, position, velocity, and throttle.
 
 > [!CAUTION]
-> The baseline for this software was originally written in Python "by hand" as a terminal application. Later, when development of the GUI began and the project was switched to the Electron framework, the complete workflow was implemented using AI tools (OpenAI Codex agent).**This approach is by no means recommended or supported from my side**, but it served as an interesting experiment to explore what can be achieved with AI tools when there is a clear application idea and precise guidelines on how and what the agent needs to do.
+> The baseline for this software was originally written in Python "by hand" as a terminal application. Later, when development of the GUI began and the project was switched from QT to the Electron framework, the complete workflow was implemented using AI tools (OpenAI Codex agent). **This approach is by no means recommended or supported from my side**, but it served as an interesting experiment to explore what can be achieved with AI tools when there is a clear application idea and precise guidelines on how and what the agent needs to do.
 
 Part of the Amon Lander project:
 

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self';"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Log Viewer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app log-viewer-app" data-view="log-viewer" data-drone="">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-block">
+            <span class="system-tag">AMON SYSTEM</span>
+            <div class="brand-text">Log Viewer</div>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="topbar-actions">
+            <button id="closeBtn" class="ghost" type="button">Close</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="log-main">
+        <section class="panel log-loader">
+          <div class="panel-title">Drone Log CSV</div>
+          <div class="log-file-row">
+            <input id="logPathInput" class="builder-input log-path-input" type="text" readonly placeholder="No file selected" />
+            <button id="browseLogBtn" class="ghost" type="button">Browse</button>
+            <button id="loadLogBtn" class="primary" type="button">Load</button>
+            <button id="clearLogBtn" class="ghost" type="button">Clear</button>
+          </div>
+          <div id="logStatus" class="profile-status hidden" aria-live="polite"></div>
+        </section>
+
+        <section class="log-summary">
+          <div class="panel">
+            <div class="panel-title">Samples</div>
+            <div id="sampleCount" class="log-metric">--</div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Duration</div>
+            <div id="durationValue" class="log-metric">-- s</div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Rate</div>
+            <div id="rateValue" class="log-metric">-- Hz</div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">Columns</div>
+            <div id="columnCount" class="log-metric">--</div>
+          </div>
+        </section>
+
+        <section id="plotGrid" class="log-plot-grid"></section>
+      </main>
+    </div>
+
+    <script type="module" src="./log_viewer_renderer.js"></script>
+  </body>
+</html>

@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
   backendUrl: "http://127.0.0.1:8002",
   openFirmwareUpdater: () => ipcRenderer.invoke("open-fw-updater"),
   openFlightPlanning: () => ipcRenderer.invoke("open-flight-planning"),
+  openLogViewer: () => ipcRenderer.invoke("open-log-viewer"),
+  selectLogFile: () => ipcRenderer.invoke("select-log-file"),
   selectFlightProfile: () => ipcRenderer.invoke("select-flight-profile"),
   saveFlightProfile: (suggestedName, jsonText) =>
     ipcRenderer.invoke("save-flight-profile", suggestedName, jsonText),

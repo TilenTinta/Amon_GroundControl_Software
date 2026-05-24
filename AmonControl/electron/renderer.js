@@ -11,6 +11,7 @@ const statusDot = document.querySelector(".status-dot");
 const droneStatus = document.getElementById("droneStatus");
 const droneDot = document.querySelector(".drone-dot");
 const settingsBtn = document.getElementById("settingsBtn");
+const logViewerBtn = document.getElementById("logViewerBtn");
 const linkBtn = document.getElementById("linkBtn");
 const pairDroneBtn = document.getElementById("pairDroneBtn");
 const linkModal = document.getElementById("linkModal");
@@ -620,13 +621,22 @@ function updateTelemetry(data, cacheUpdate = true) {
     }
   }
   syncControlStateFromTelemetry(t.flight_state || t.mode);
+
+  function updateVoltageField(node, value, threshold) {
+    if (!node) return;
+    const v = Number(value);
+    node.textContent = `${format(Number.isFinite(v) ? v : 0, 2)} V`;
+    const isLow = Number.isFinite(v) && v > 0 && v < threshold;
+    node.classList.toggle("is-low", isLow);
+  }
+
   if (fields.flightState) fields.flightState.textContent = t.flight_state;
   if (fields.battVoltageMain) {
     const mainV = t.battery_main_v || t.battery_v || 0;
-    fields.battVoltageMain.textContent = `${format(mainV, 2)} V`;
+    updateVoltageField(fields.battVoltageMain, mainV, 10.1);
   }
   if (fields.battVoltageMotor) {
-    fields.battVoltageMotor.textContent = `${format(t.battery_motor_v || 0, 2)} V`;
+    updateVoltageField(fields.battVoltageMotor, t.battery_motor_v || 0, 21.0);
   }
   if (fields.signalDbm) fields.signalDbm.textContent = `${format(t.signal_dbm, 0)} dBm`;
   if (fields.tlmRate) fields.tlmRate.textContent = `${format(t.tlm_rate, 2)} Hz`;
@@ -827,10 +837,17 @@ function animate() {
   if (renderer && scene && camera) {
     if (modelMesh) {
       if (activeDrone !== "talon") {
+        const lerpAngleDeg = (current, target, alpha) => {
+          const from = Number(current) || 0;
+          const to = Number(target) || 0;
+          const delta = ((to - from + 540) % 360) - 180; // shortest path in degrees
+          const next = from + delta * alpha;
+          return ((next + 540) % 360) - 180;
+        };
         orientation = {
-          roll: orientation.roll + (orientationTarget.roll - orientation.roll) * MODEL_RESPONSE,
-          pitch: orientation.pitch + (orientationTarget.pitch - orientation.pitch) * MODEL_RESPONSE,
-          yaw: orientation.yaw + (orientationTarget.yaw - orientation.yaw) * MODEL_RESPONSE,
+          roll: lerpAngleDeg(orientation.roll, orientationTarget.roll, MODEL_RESPONSE),
+          pitch: lerpAngleDeg(orientation.pitch, orientationTarget.pitch, MODEL_RESPONSE),
+          yaw: lerpAngleDeg(orientation.yaw, orientationTarget.yaw, MODEL_RESPONSE),
         };
       }
       const roll = orientation.roll || 0;
@@ -1090,6 +1107,16 @@ settingsBtn.addEventListener("click", () => {
   }
   window.open("about:blank#fw-updater", "_blank", "noopener");
 });
+
+if (logViewerBtn) {
+  logViewerBtn.addEventListener("click", () => {
+    if (window.electronAPI && window.electronAPI.openLogViewer) {
+      window.electronAPI.openLogViewer();
+      return;
+    }
+    window.open("about:blank#log-viewer", "_blank", "noopener");
+  });
+}
 
 if (refreshPortsBtn) {
   refreshPortsBtn.addEventListener("click", () => {

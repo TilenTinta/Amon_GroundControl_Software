@@ -7,6 +7,7 @@ let backendProcess = null;
 let fwBackendProcess = null;
 let fwWindow = null;
 let flightPlanningWindow = null;
+let logViewerWindow = null;
 let mainWindow = null;
 let splashWindow = null;
 let flightPlanningProfileCache = null;
@@ -79,6 +80,9 @@ function createWindow() {
       }
       if (url.includes("flight-planning")) {
         openFlightPlanning();
+      }
+      if (url.includes("log-viewer")) {
+        openLogViewer();
       }
       return { action: "deny" };
     }
@@ -197,6 +201,30 @@ function openFlightPlanning() {
   flightPlanningWindow.loadFile(path.join(__dirname, "flight_planning.html"));
 }
 
+function openLogViewer() {
+  if (logViewerWindow && !logViewerWindow.isDestroyed()) {
+    logViewerWindow.focus();
+    return;
+  }
+
+  logViewerWindow = new BrowserWindow({
+    width: 1500,
+    height: 920,
+    backgroundColor: "#0a0f16",
+    webPreferences: {
+      contextIsolation: true,
+      sandbox: false,
+      preload: path.join(__dirname, "preload.js"),
+    },
+  });
+
+  logViewerWindow.on("closed", () => {
+    logViewerWindow = null;
+  });
+
+  logViewerWindow.loadFile(path.join(__dirname, "log_viewer.html"));
+}
+
 app.whenReady().then(() => {
   if (process.env.START_BACKEND !== "0") {
     startBackend();
@@ -234,6 +262,34 @@ ipcMain.handle("open-fw-updater", () => {
 
 ipcMain.handle("open-flight-planning", () => {
   openFlightPlanning();
+});
+
+ipcMain.handle("open-log-viewer", () => {
+  openLogViewer();
+});
+
+ipcMain.handle("select-log-file", async () => {
+  const win = BrowserWindow.getFocusedWindow();
+  const logsDir = path.join(__dirname, "..", "logging");
+  const result = await dialog.showOpenDialog(win || undefined, {
+    title: "Open Drone Log CSV",
+    defaultPath: logsDir,
+    properties: ["openFile"],
+    filters: [
+      { name: "CSV Files", extensions: ["csv"] },
+      { name: "All Files", extensions: ["*"] },
+    ],
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { ok: false, canceled: true };
+  }
+  const filePath = result.filePaths[0];
+  try {
+    const csvText = await fs.promises.readFile(filePath, "utf8");
+    return { ok: true, filePath, csvText };
+  } catch (error) {
+    return { ok: false, error: "Failed to read log file." };
+  }
 });
 
 ipcMain.handle("select-log-save-path", async () => {

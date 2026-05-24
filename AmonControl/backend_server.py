@@ -50,6 +50,7 @@ from backend.protocol import (
     TVL_RF_TX_CNT,
     TVL_THP,
     TVL_TLM,
+    TVL_THROTTLE,
     TVL_STATE_ARM,
     TVL_STATE_FLY,
     TVL_STATE_FLY_OVER,
@@ -581,6 +582,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
     raw_updates: dict = {}
     battery_main_set = False
     battery_edf_set = False
+    battery_seen = 0
     angle_scale = 100.0
     idx = 0
 
@@ -609,15 +611,32 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             idx += 2
             batt_v = _decode_battery_v(batt_raw)
 
-            if not battery_main_set:
+            # If firmware uses distinct TLVs, decode by TLV id.
+            if TVL_BAT_MAIN != TVL_BAT_EDF:
+                if tlv == TVL_BAT_MAIN:
+                    battery_main_set = True
+                    updates["battery_main_v"] = batt_v
+                    updates["battery_v"] = batt_v
+                    raw_updates["bAt"] = batt_v
+                else:
+                    battery_edf_set = True
+                    updates["battery_motor_v"] = batt_v
+                    raw_updates["bAt2"] = batt_v
+                continue
+
+            # If firmware uses the same TLV id for both batteries, decode by order.
+            battery_seen += 1
+            motor_first = bool(getattr(state, "battery_motor_first", False))
+            is_motor = (battery_seen == 1 and motor_first) or (battery_seen == 2 and not motor_first)
+            if is_motor:
+                battery_edf_set = True
+                updates["battery_motor_v"] = batt_v
+                raw_updates["bAt2"] = batt_v
+            else:
                 battery_main_set = True
                 updates["battery_main_v"] = batt_v
                 updates["battery_v"] = batt_v
                 raw_updates["bAt"] = batt_v
-            else:
-                battery_edf_set = True
-                updates["battery_motor_v"] = batt_v
-                raw_updates["bAt2"] = batt_v
 
         elif tlv == TVL_DATE_TIME:
             if idx + 6 > len(payload):
@@ -693,6 +712,14 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             updates["tlm_rate"] = payload[idx]
             idx += 1
 
+        elif tlv == TVL_THROTTLE:
+            if idx + 1 > len(payload):
+                break
+            thr = payload[idx]
+            idx += 1
+            updates["throttle"] = thr
+            raw_updates["thr"] = thr
+
         elif tlv == TVL_FLIGHT_MODE:
             if idx + 1 > len(payload):
                 break
@@ -766,7 +793,11 @@ def _signed16(value: int) -> int:
 
 # Scaling for battery values from firmware
 def _decode_battery_v(raw: int) -> float:    
-    if raw < 2000:
+    # Firmware has historically reported battery as either:
+    # - centivolts (0.01V units): e.g. 12.00V -> 1200, 23.50V -> 2350
+    # - millivolts:              e.g. 12.00V -> 12000, 23.50V -> 23500
+    # Use a threshold that correctly separates typical ranges.
+    if raw < 10000:
         return raw / 100.0
     return raw / 1000.0
 

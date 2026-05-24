@@ -32,6 +32,7 @@ class LinkState:
     require_status_ack: bool = True
     telemetry_confirms_connection: bool = True
     telemetry_paused: bool = False
+    battery_motor_first: bool = False
     telemetry_lock: threading.Lock = field(default_factory=threading.Lock)
     last_tlm_ts: float = 0.0
     tlm_rate_hz: float = 0.0
@@ -63,6 +64,10 @@ class LinkState:
         if isinstance(telemetry_confirms_connection, bool):
             self.telemetry_confirms_connection = telemetry_confirms_connection
 
+        battery_motor_first = data.get("battery_motor_first")
+        if isinstance(battery_motor_first, bool):
+            self.battery_motor_first = battery_motor_first
+
 
     # Save current settings to config.json
     def save_config(self) -> None:
@@ -70,5 +75,6 @@ class LinkState:
             "max_retransmits": self.max_retransmits,
             "require_status_ack": self.require_status_ack,
             "telemetry_confirms_connection": self.telemetry_confirms_connection,
+            "battery_motor_first": self.battery_motor_first,
         }
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")

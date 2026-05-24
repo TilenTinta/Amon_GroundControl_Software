@@ -1,6 +1,7 @@
 const closeBtn = document.getElementById("closeBtn");
 const browseLogBtn = document.getElementById("browseLogBtn");
 const loadLogBtn = document.getElementById("loadLogBtn");
+const resetZoomBtn = document.getElementById("resetZoomBtn");
 const clearLogBtn = document.getElementById("clearLogBtn");
 const logPathInput = document.getElementById("logPathInput");
 const logStatus = document.getElementById("logStatus");
@@ -12,6 +13,9 @@ const columnCount = document.getElementById("columnCount");
 
 let pendingCsvText = "";
 let pendingPath = "";
+let currentDataset = null;
+let zoomState = { start: 0, end: 1, max: 1 };
+let activePan = null;
 
 const PLOT_GROUPS = [
   {
@@ -188,23 +192,88 @@ function valueRange(rows, series) {
   return { min: min - pad, max: max + pad };
 }
 
-function drawPlot(canvas, rows, group) {
-  const ctx = canvas.getContext("2d");
-  const ratio = window.devicePixelRatio || 1;
+function resetZoom(redraw = true) {
+  const max = currentDataset && currentDataset.rows.length
+    ? Math.max(...currentDataset.rows.map((row) => row.time_sec || 0), 1)
+    : 1;
+  zoomState = { start: 0, end: max, max };
+  if (redraw) redrawPlots();
+}
+
+function clampZoom(start, end) {
+  const max = zoomState.max || 1;
+  const minSpan = Math.min(max, Math.max(0.05, max / 500));
+  let nextStart = Number.isFinite(start) ? start : 0;
+  let nextEnd = Number.isFinite(end) ? end : max;
+  if (nextEnd - nextStart < minSpan) {
+    const center = (nextStart + nextEnd) / 2;
+    nextStart = center - minSpan / 2;
+    nextEnd = center + minSpan / 2;
+  }
+  const span = nextEnd - nextStart;
+  if (nextStart < 0) {
+    nextStart = 0;
+    nextEnd = span;
+  }
+  if (nextEnd > max) {
+    nextEnd = max;
+    nextStart = max - span;
+  }
+  zoomState.start = Math.max(0, nextStart);
+  zoomState.end = Math.min(max, nextEnd);
+}
+
+function getPlotMetrics(canvas) {
   const width = Math.max(320, canvas.clientWidth);
   const height = Math.max(220, canvas.clientHeight);
-  canvas.width = Math.floor(width * ratio);
-  canvas.height = Math.floor(height * ratio);
-  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
   const padLeft = 54;
   const padRight = 18;
   const padTop = 20;
   const padBottom = 34;
-  const plotW = width - padLeft - padRight;
-  const plotH = height - padTop - padBottom;
-  const maxTime = Math.max(...rows.map((row) => row.time_sec || 0), 1);
-  const range = valueRange(rows, group.series);
+  return {
+    width,
+    height,
+    padLeft,
+    padRight,
+    padTop,
+    padBottom,
+    plotW: width - padLeft - padRight,
+    plotH: height - padTop - padBottom,
+  };
+}
+
+function timeAtCanvasX(canvas, clientX) {
+  const rect = canvas.getBoundingClientRect();
+  const metrics = getPlotMetrics(canvas);
+  const x = Math.min(
+    metrics.padLeft + metrics.plotW,
+    Math.max(metrics.padLeft, clientX - rect.left)
+  );
+  const ratio = (x - metrics.padLeft) / metrics.plotW;
+  return zoomState.start + ratio * (zoomState.end - zoomState.start);
+}
+
+function visibleRows(rows) {
+  return rows.filter((row) => {
+    const time = row.time_sec || 0;
+    return time >= zoomState.start && time <= zoomState.end;
+  });
+}
+
+function drawPlot(canvas, rows, group) {
+  const ctx = canvas.getContext("2d");
+  const ratio = window.devicePixelRatio || 1;
+  const { width, height, padLeft, padTop, plotW, plotH } = getPlotMetrics(canvas);
+  canvas.width = Math.floor(width * ratio);
+  canvas.height = Math.floor(height * ratio);
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+  const maxTime = zoomState.max || Math.max(...rows.map((row) => row.time_sec || 0), 1);
+  const startTime = Math.max(0, zoomState.start);
+  const endTime = Math.min(maxTime, zoomState.end);
+  const timeSpan = Math.max(0.001, endTime - startTime);
+  const rowsInView = visibleRows(rows);
+  const range = valueRange(rowsInView.length ? rowsInView : rows, group.series);
   const ySpan = range.max - range.min || 1;
 
   ctx.clearRect(0, 0, width, height);
@@ -237,20 +306,24 @@ function drawPlot(canvas, rows, group) {
   ctx.fillText(group.yLabel, padLeft, 12);
   ctx.fillText(`${range.max.toFixed(1)}`, 8, padTop + 8);
   ctx.fillText(`${range.min.toFixed(1)}`, 8, padTop + plotH);
-  const xLabel = `time (s), max ${maxTime.toFixed(2)}`;
+  const xLabel =
+    startTime <= 0 && endTime >= maxTime
+      ? `time (s), max ${maxTime.toFixed(2)}`
+      : `time (s), ${startTime.toFixed(2)}-${endTime.toFixed(2)}`;
   ctx.fillText(xLabel, padLeft + plotW / 2 - ctx.measureText(xLabel).width / 2, height - 8);
 
-  const step = Math.max(1, Math.ceil(rows.length / 1800));
+  const drawableRows = rowsInView.length ? rowsInView : rows;
+  const step = Math.max(1, Math.ceil(drawableRows.length / 1800));
   group.series.forEach((line) => {
     ctx.strokeStyle = line.color;
     ctx.lineWidth = 1.7;
     ctx.beginPath();
     let started = false;
-    for (let i = 0; i < rows.length; i += step) {
-      const row = rows[i];
+    for (let i = 0; i < drawableRows.length; i += step) {
+      const row = drawableRows[i];
       const value = row[line.key];
       if (!Number.isFinite(value)) continue;
-      const x = padLeft + ((row.time_sec || 0) / maxTime) * plotW;
+      const x = padLeft + (((row.time_sec || 0) - startTime) / timeSpan) * plotW;
       const y = padTop + (1 - (value - range.min) / ySpan) * plotH;
       if (!started) {
         ctx.moveTo(x, y);
@@ -261,6 +334,70 @@ function drawPlot(canvas, rows, group) {
     }
     ctx.stroke();
   });
+}
+
+function redrawPlots() {
+  if (!currentDataset || !plotGrid) return;
+  const canvases = plotGrid.querySelectorAll("canvas.log-chart");
+  canvases.forEach((canvas) => {
+    const group = canvas._logGroup;
+    if (group) {
+      drawPlot(canvas, currentDataset.rows, group);
+    }
+  });
+}
+
+function handlePlotWheel(event) {
+  if (!currentDataset) return;
+  event.preventDefault();
+  const focusTime = timeAtCanvasX(event.currentTarget, event.clientX);
+  const span = zoomState.end - zoomState.start;
+  const zoomFactor = event.deltaY < 0 ? 0.82 : 1.22;
+  const nextSpan = span * zoomFactor;
+  const focusRatio = (focusTime - zoomState.start) / span;
+  const nextStart = focusTime - nextSpan * focusRatio;
+  const nextEnd = nextStart + nextSpan;
+  clampZoom(nextStart, nextEnd);
+  redrawPlots();
+}
+
+function handlePlotPointerDown(event) {
+  if (!currentDataset || event.button !== 0) return;
+  event.currentTarget.setPointerCapture(event.pointerId);
+  activePan = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    zoomStart: zoomState.start,
+    zoomEnd: zoomState.end,
+    canvas: event.currentTarget,
+  };
+}
+
+function handlePlotPointerMove(event) {
+  if (!activePan || activePan.pointerId !== event.pointerId) return;
+  const metrics = getPlotMetrics(activePan.canvas);
+  const span = activePan.zoomEnd - activePan.zoomStart;
+  const deltaTime = -((event.clientX - activePan.startX) / metrics.plotW) * span;
+  clampZoom(activePan.zoomStart + deltaTime, activePan.zoomEnd + deltaTime);
+  redrawPlots();
+}
+
+function handlePlotPointerUp(event) {
+  if (!activePan || activePan.pointerId !== event.pointerId) return;
+  activePan = null;
+}
+
+function handlePlotDoubleClick() {
+  resetZoom(true);
+}
+
+function bindPlotInteractions(canvas) {
+  canvas.addEventListener("wheel", handlePlotWheel, { passive: false });
+  canvas.addEventListener("pointerdown", handlePlotPointerDown);
+  canvas.addEventListener("pointermove", handlePlotPointerMove);
+  canvas.addEventListener("pointerup", handlePlotPointerUp);
+  canvas.addEventListener("pointercancel", handlePlotPointerUp);
+  canvas.addEventListener("dblclick", handlePlotDoubleClick);
 }
 
 function renderLegend(parent, series) {
@@ -300,10 +437,12 @@ function renderPlots(dataset) {
 
     const canvas = document.createElement("canvas");
     canvas.className = "log-chart";
+    canvas._logGroup = { ...group, series: availableSeries };
+    bindPlotInteractions(canvas);
     card.appendChild(head);
     card.appendChild(canvas);
     plotGrid.appendChild(card);
-    drawPlot(canvas, dataset.rows, { ...group, series: availableSeries });
+    drawPlot(canvas, dataset.rows, canvas._logGroup);
   });
 }
 
@@ -330,6 +469,9 @@ function renderSummary(dataset) {
 function clearViewer() {
   pendingCsvText = "";
   pendingPath = "";
+  currentDataset = null;
+  zoomState = { start: 0, end: 1, max: 1 };
+  activePan = null;
   if (logPathInput) logPathInput.value = "";
   if (plotGrid) plotGrid.innerHTML = "";
   setText(sampleCount, "--");
@@ -363,6 +505,8 @@ function loadSelectedLog() {
   }
   try {
     const dataset = buildDataset(pendingCsvText);
+    currentDataset = dataset;
+    resetZoom(false);
     renderSummary(dataset);
     renderPlots(dataset);
     setStatus(`Loaded ${pendingPath || "log file"}.`);
@@ -382,13 +526,13 @@ if (browseLogBtn) {
 if (loadLogBtn) {
   loadLogBtn.addEventListener("click", loadSelectedLog);
 }
+if (resetZoomBtn) {
+  resetZoomBtn.addEventListener("click", () => resetZoom(true));
+}
 if (clearLogBtn) {
   clearLogBtn.addEventListener("click", clearViewer);
 }
 
 window.addEventListener("resize", () => {
-  if (!pendingCsvText || !plotGrid || !plotGrid.children.length) return;
-  try {
-    renderPlots(buildDataset(pendingCsvText));
-  } catch (_error) {}
+  redrawPlots();
 });

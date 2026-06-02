@@ -43,10 +43,16 @@ Part of the Amon Lander project:
 - 3D orientation model rendering (Three.js)
 - Multi-series telemetry plots for IMU, orientation, altitude, position, velocity, and throttle
 - Link management, status, and telemetry panels
+- Amon Link firmware update from app
+- Flight log viewer
+- Drone parameter tuner 
+- Flight path planner (save, load, upload to drone)
+- Flight log saver (save log from drone to PC over USB)
+- ...
 
 ![Start Window](Pictures/startWindow.png)
 
-![Telemetry View](Pictures/dataWindow.png)
+![Telemetry View](Pictures/dataWindowAmon.png)
 
 ---
 

@@ -92,7 +92,10 @@ The Electron app starts the Python backend automatically (unless `START_BACKEND=
 
 ## Repository Structure
 
-- `AmonControl/` - Electron app and Python backend
+- `AmonControl/` - Electron app and Python backend 
+    - `logging/` includes saved logs
+    - `flight_profiles/` includes saved flight paths
+- `FW_Update_app/` - AmonLink firmware update
 - `Images/` - UI assets and logos
 - `Models/` - 3D model assets
 - `Pictures/` - README screenshots

@@ -285,8 +285,7 @@ function bindTelemetryElements() {
     tvcXn: document.getElementById("tvcXn"),
     tvcYp: document.getElementById("tvcYp"),
     tvcYn: document.getElementById("tvcYn"),
-    tvcZp: document.getElementById("tvcZp"),
-    tvcZn: document.getElementById("tvcZn"),
+    tvcEdf: document.getElementById("tvcEdf"),
     throttleValue: document.getElementById("throttleValue"),
     posX: document.getElementById("posX"),
     posY: document.getElementById("posY"),
@@ -542,7 +541,7 @@ function zeroTelemetry() {
     accel: { ax: 0, ay: 0, az: 0 },
     gyro: { gx: 0, gy: 0, gz: 0 },
     throttle: 0,
-    tvc: { x: 0, y: 0, z: 0 },
+    tvc: { xp: 0, xn: 0, yp: 0, yn: 0 },
     link_quality: 0,
     link_latency: 0,
     packet_loss: 0,
@@ -670,15 +669,16 @@ function updateTelemetry(data, cacheUpdate = true) {
   if (fields.gyroX) fields.gyroX.textContent = `${format(t.gyro.gx, 2)} deg/s`;
   if (fields.gyroY) fields.gyroY.textContent = `${format(t.gyro.gy, 2)} deg/s`;
   if (fields.gyroZ) fields.gyroZ.textContent = `${format(t.gyro.gz, 2)} deg/s`;
-  const tvcX = t.tvc.x || 0;
-  const tvcY = t.tvc.y || 0;
-  const tvcZ = t.tvc.z || 0;
-  if (fields.tvcXp) fields.tvcXp.textContent = `${format(Math.max(0, tvcX), 2)} deg`;
-  if (fields.tvcXn) fields.tvcXn.textContent = `${format(Math.max(0, -tvcX), 2)} deg`;
-  if (fields.tvcYp) fields.tvcYp.textContent = `${format(Math.max(0, tvcY), 2)} deg`;
-  if (fields.tvcYn) fields.tvcYn.textContent = `${format(Math.max(0, -tvcY), 2)} deg`;
-  if (fields.tvcZp) fields.tvcZp.textContent = `${format(Math.max(0, tvcZ), 2)} deg`;
-  if (fields.tvcZn) fields.tvcZn.textContent = `${format(Math.max(0, -tvcZ), 2)} deg`;
+  const tvc = t.tvc || {};
+  const tvcXp = Number.isFinite(Number(tvc.xp)) ? Number(tvc.xp) : Math.max(0, Number(tvc.x || 0));
+  const tvcXn = Number.isFinite(Number(tvc.xn)) ? Number(tvc.xn) : Math.max(0, -Number(tvc.x || 0));
+  const tvcYp = Number.isFinite(Number(tvc.yp)) ? Number(tvc.yp) : Math.max(0, Number(tvc.y || 0));
+  const tvcYn = Number.isFinite(Number(tvc.yn)) ? Number(tvc.yn) : Math.max(0, -Number(tvc.y || 0));
+  if (fields.tvcXp) fields.tvcXp.textContent = `${format(tvcXp, 2)} deg`;
+  if (fields.tvcXn) fields.tvcXn.textContent = `${format(tvcXn, 2)} deg`;
+  if (fields.tvcYp) fields.tvcYp.textContent = `${format(tvcYp, 2)} deg`;
+  if (fields.tvcYn) fields.tvcYn.textContent = `${format(tvcYn, 2)} deg`;
+  if (fields.tvcEdf) fields.tvcEdf.textContent = `${format(t.throttle || 0, 0)} %`;
 
   const raw = t.raw || {};
   if (fields.tN) {

@@ -114,6 +114,7 @@ TVL_IMU = 0x33
 TVL_IMU_TEMP = 0x34
 TVL_GPS = 0x35
 TVL_THROTTLE = 0x36
+TVL_SERVO_ANGL = 0x37
 
 
 # CRC-16/Modbus (poly 0xA001) with 0xFFFF initial value

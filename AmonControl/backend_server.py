@@ -51,6 +51,7 @@ from backend.protocol import (
     TVL_THP,
     TVL_TLM,
     TVL_THROTTLE,
+    TVL_SERVO_ANGL,
     TVL_STATE_ARM,
     TVL_STATE_FLY,
     TVL_STATE_FLY_OVER,
@@ -147,7 +148,7 @@ def _zero_payload() -> dict:
         "accel": {"ax": 0, "ay": 0, "az": 0},
         "gyro": {"gx": 0, "gy": 0, "gz": 0},
         "throttle": 0,
-        "tvc": {"x": 0, "y": 0, "z": 0},
+        "tvc": {"xp": 0, "xn": 0, "yp": 0, "yn": 0},
         "link_quality": 0,
         "link_latency": 0,
         "packet_loss": 0,
@@ -232,7 +233,7 @@ def _send_drone_state(state_code: int) -> dict:
                     return False
                 mode = payload[idx]
                 return (mode & 0x0F) == expected_state_nibble
-            if tlv in (TVL_RF_STREAM, TVL_TLM):
+            if tlv in (TVL_RF_STREAM, TVL_TLM, TVL_THROTTLE, TVL_FLIGHT_MODE):
                 idx += 1
             elif tlv in (TVL_BAT_MAIN, TVL_BAT_EDF, TVL_ERR, TVL_ALT, TVL_IMU_TEMP):
                 idx += 2
@@ -249,6 +250,8 @@ def _send_drone_state(state_code: int) -> dict:
                     idx += 2
             elif tlv == TVL_ANGL:
                 idx += 6
+            elif tlv == TVL_SERVO_ANGL:
+                idx += 8
             elif tlv == TVL_IMU:
                 idx += 12
             else:
@@ -719,6 +722,25 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             idx += 1
             updates["throttle"] = thr
             raw_updates["thr"] = thr
+
+        elif tlv == TVL_SERVO_ANGL:
+            if idx + 8 > len(payload):
+                break
+            servo_xp = _signed16((payload[idx] << 8) | payload[idx + 1])
+            servo_xn = _signed16((payload[idx + 2] << 8) | payload[idx + 3])
+            servo_yp = _signed16((payload[idx + 4] << 8) | payload[idx + 5])
+            servo_yn = _signed16((payload[idx + 6] << 8) | payload[idx + 7])
+            idx += 8
+            updates["tvc"] = {
+                "xp": servo_xp / angle_scale,
+                "xn": servo_xn / angle_scale,
+                "yp": servo_yp / angle_scale,
+                "yn": servo_yn / angle_scale,
+            }
+            raw_updates["servo_xp"] = updates["tvc"]["xp"]
+            raw_updates["servo_xn"] = updates["tvc"]["xn"]
+            raw_updates["servo_yp"] = updates["tvc"]["yp"]
+            raw_updates["servo_yn"] = updates["tvc"]["yn"]
 
         elif tlv == TVL_FLIGHT_MODE:
             if idx + 1 > len(payload):

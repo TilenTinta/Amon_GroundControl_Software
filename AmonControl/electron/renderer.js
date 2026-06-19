@@ -60,7 +60,7 @@ const chartConfig = [
     yLabel: "deg",
     xLabel: "time (s)",
     series: [
-      { key: "oriX", color: "#f2b96d" },
+      { key: "oriX", color: "#f06d6d" },
       { key: "oriXRef", color: "#8a96a8" },
     ],
   },
@@ -69,7 +69,7 @@ const chartConfig = [
     yLabel: "deg",
     xLabel: "time (s)",
     series: [
-      { key: "oriY", color: "#4dd6a3" },
+      { key: "oriY", color: "#4dd64d" },
       { key: "oriYRef", color: "#8a96a8" },
     ],
   },
@@ -78,7 +78,7 @@ const chartConfig = [
     yLabel: "deg",
     xLabel: "time (s)",
     series: [
-      { key: "oriZ", color: "#63e0ff" },
+      { key: "oriZ", color: "#4aa3ff" },
       { key: "oriZRef", color: "#8a96a8" },
     ],
   },
@@ -97,7 +97,7 @@ const chartConfig = [
     xLabel: "time (s)",
     series: [
       { key: "posX", color: "#f06d6d" },
-      { key: "posY", color: "#6ed9ff" },
+      { key: "posY", color: "#4dd64d" },
       { key: "posRef", color: "#8a96a8" },
     ],
   },
@@ -106,8 +106,8 @@ const chartConfig = [
     yLabel: "m/s",
     xLabel: "time (s)",
     series: [
-      { key: "velX", color: "#f2b96d" },
-      { key: "velY", color: "#4dd6a3" },
+      { key: "velX", color: "#f06d6d" },
+      { key: "velY", color: "#4dd64d" },
       { key: "velRef", color: "#8a96a8" },
     ],
   },
@@ -193,6 +193,7 @@ function resetMission() {
     armBtn.classList.remove("armed");
     armBtn.classList.add("ghost");
   }
+  updateEmergencyControls();
 }
 
 let toastTimer = null;
@@ -330,11 +331,14 @@ function bindTelemetryElements() {
 function bindTelemetryControls() {
   startFlightBtn = document.getElementById("startFlightBtn");
   const armBtn = document.getElementById("armBtn");
+  const landNowBtn = document.getElementById("landNowBtn");
+  const eStopBtn = document.getElementById("eStopBtn");
   const flightPlanningBtn = document.getElementById("flightPlanningBtn");
   if (!startFlightBtn) {
     return;
   }
   startFlightBtn.classList.toggle("is-disabled", !isArmed);
+  updateEmergencyControls();
   startFlightBtn.addEventListener("click", async () => {
     if (!isArmed) {
       showWarning("Arm the vehicle before starting flight.");
@@ -354,6 +358,7 @@ function bindTelemetryControls() {
       missionRunning = true;
       missionStart = Date.now();
       startFlightBtn.textContent = "Stop Flight";
+      updateEmergencyControls();
     } else {
       try {
         const result = await fetchJson("/drone/fly_over", { method: "POST" });
@@ -368,21 +373,22 @@ function bindTelemetryControls() {
       missionRunning = false;
       missionElapsed += Date.now() - missionStart;
       startFlightBtn.textContent = "Start Flight";
+      updateEmergencyControls();
     }
   });
   if (armBtn) {
     armBtn.addEventListener("click", async () => {
-      if (!isArmed) {
-        try {
-          const result = await fetchJson("/drone/arm", { method: "POST" });
-          if (!result || !result.ok) {
-            showWarning((result && result.error) || "Failed to send arm command.");
-            return;
-          }
-        } catch (error) {
-          showWarning("Failed to send arm command.");
+      const endpoint = isArmed ? "/drone/disarm" : "/drone/arm";
+      const action = isArmed ? "disarm" : "arm";
+      try {
+        const result = await fetchJson(endpoint, { method: "POST" });
+        if (!result || !result.ok) {
+          showWarning((result && result.error) || `Failed to send ${action} command.`);
           return;
         }
+      } catch (error) {
+        showWarning(`Failed to send ${action} command.`);
+        return;
       }
       isArmed = !isArmed;
       armBtn.textContent = isArmed ? "Disarm" : "Arm";
@@ -391,6 +397,25 @@ function bindTelemetryControls() {
       if (startFlightBtn) {
         startFlightBtn.classList.toggle("is-disabled", !isArmed);
       }
+      updateEmergencyControls();
+    });
+  }
+
+  if (landNowBtn) {
+    landNowBtn.addEventListener("click", () => {
+      if (landNowBtn.disabled) {
+        return;
+      }
+      sendDroneCommand("/drone/land_now", "Land now command acknowledged.", "Failed to send land now command.");
+    });
+  }
+
+  if (eStopBtn) {
+    eStopBtn.addEventListener("click", () => {
+      if (eStopBtn.disabled) {
+        return;
+      }
+      sendDroneCommand("/drone/e_stop", "E stop acknowledged.", "Failed to send e stop command.");
     });
   }
 
@@ -414,6 +439,51 @@ async function fetchJson(path, options = {}) {
     throw new Error("Request failed");
   }
   return response.json();
+}
+
+function showCommandFailure(message) {
+  showWarning(message);
+  window.alert(message);
+}
+
+async function sendDroneCommand(path, successMessage, failureMessage) {
+  try {
+    const result = await fetchJson(path, { method: "POST" });
+    if (!result || !result.ok) {
+      const base = (result && result.error) || failureMessage;
+      const details =
+        result && typeof result.attempts === "number"
+          ? `Sent ${result.attempts} times without ACK.`
+          : "";
+      showCommandFailure(details ? `${base}\n${details}` : base);
+      return false;
+    }
+    showWarning(successMessage);
+    return true;
+  } catch (error) {
+    showCommandFailure(failureMessage);
+    return false;
+  }
+}
+
+function updateEmergencyControls() {
+  const landNowBtn = document.getElementById("landNowBtn");
+  const eStopBtn = document.getElementById("eStopBtn");
+  const landNowEnabled = missionRunning;
+  const eStopEnabled = isArmed || missionRunning;
+
+  if (landNowBtn) {
+    landNowBtn.disabled = !landNowEnabled;
+    landNowBtn.classList.toggle("ghost", true);
+    landNowBtn.classList.toggle("is-disabled", !landNowEnabled);
+  }
+
+  if (eStopBtn) {
+    eStopBtn.disabled = !eStopEnabled;
+    eStopBtn.classList.toggle("danger", eStopEnabled);
+    eStopBtn.classList.toggle("ghost", !eStopEnabled);
+    eStopBtn.classList.toggle("is-disabled", !eStopEnabled);
+  }
 }
 
 async function refreshPorts() {
@@ -577,6 +647,15 @@ function format(value, decimals = 1) {
   return Number(value).toFixed(decimals);
 }
 
+function mapAmonBodyAxes(orientationSource) {
+  const ori = orientationSource || {};
+  return {
+    x: Number(ori.roll || 0),
+    y: Number(ori.pitch || 0),
+    z: Number(ori.yaw || 0),
+  };
+}
+
 function syncControlStateFromTelemetry(stateLabel) {
   const state = String(stateLabel || "").trim().toLowerCase();
   const armBtn = document.getElementById("armBtn");
@@ -596,14 +675,17 @@ function syncControlStateFromTelemetry(stateLabel) {
     startFlightBtn.classList.toggle("is-disabled", !isArmed);
     startFlightBtn.textContent = flyingByState ? "Stop Flight" : "Start Flight";
   }
+  updateEmergencyControls();
 
   // Keep mission timer state aligned with reported flight mode.
   if (flyingByState && !missionRunning) {
     missionRunning = true;
     missionStart = Date.now();
+    updateEmergencyControls();
   } else if (!flyingByState && missionRunning) {
     missionRunning = false;
     missionElapsed += Date.now() - missionStart;
+    updateEmergencyControls();
   }
 }
 
@@ -1008,9 +1090,7 @@ function updateCharts() {
         const pos = t.position || {};
         const vel = t.velocity || {};
         const useAmonAxisMap = activeDrone === "amon";
-        const roll = Number(ori.roll || 0);
-        const pitch = Number(ori.pitch || 0);
-        const yaw = Number(ori.yaw || 0);
+        const amonAxes = mapAmonBodyAxes(ori);
         return {
           gx: Number(gyro.gx || 0),
           gy: Number(gyro.gy || 0),
@@ -1018,9 +1098,9 @@ function updateCharts() {
           ax: Number(accel.ax || 0),
           ay: Number(accel.ay || 0),
           az: Number(accel.az || 0),
-          oriX: useAmonAxisMap ? yaw : roll,
-          oriY: pitch,
-          oriZ: useAmonAxisMap ? roll : yaw,
+          oriX: useAmonAxisMap ? amonAxes.x : Number(ori.roll || 0),
+          oriY: useAmonAxisMap ? amonAxes.y : Number(ori.pitch || 0),
+          oriZ: useAmonAxisMap ? amonAxes.z : Number(ori.yaw || 0),
           oriXRef: 0,
           oriYRef: 0,
           oriZRef: 0,

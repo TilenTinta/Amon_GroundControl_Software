@@ -31,6 +31,8 @@ from backend.protocol import (
     OPT_DRONE_FLIGHT_PATH,
     OPT_DRONE_SET_STATE,
     OPT_DRONE_FPATH_CLEAR,
+    OPT_E_KILL,
+    OPT_LAND_NOW,
     OPT_LOG_DUMP,
     OPT_LOG_RM,
     OPT_TELEMETRY,
@@ -52,6 +54,7 @@ from backend.protocol import (
     TVL_TLM,
     TVL_THROTTLE,
     TVL_SERVO_ANGL,
+    TVL_STATE_IDLE,
     TVL_STATE_ARM,
     TVL_STATE_FLY,
     TVL_STATE_FLY_OVER,
@@ -375,6 +378,72 @@ def _send_drone_fpath_clear() -> dict:
         state.telemetry_paused = False
 
 
+def _send_drone_opcode_command(
+    opcode: int,
+    label: str,
+    send_count: int = 30,
+    retry_interval_s: float = TX_RETRY_DELAY_S,
+) -> dict:
+    _sync_connection_state()
+    if not _serial().is_connected:
+        return {"ok": False, "error": "Not connected"}
+
+    try:
+        state.telemetry_paused = True
+        frame = build_frame(
+            version=PROTOCOL_VER,
+            flags=FLAG_DATA,
+            src=ID_PC,
+            dst=ID_DRONE,
+            opcode=opcode,
+            payload=b"",
+        )
+
+        rx_buf = bytearray()
+        for attempt in range(send_count):
+            sent_at = time.monotonic()
+            _serial().write(frame)
+            logger.log_frame(f"drone-{label}-tx", frame)
+
+            deadline = time.monotonic() + STATE_CONFIRM_TIMEOUT_S
+            while time.monotonic() < deadline:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                response = _serial().read_frame(timeout_s=remaining, buf=rx_buf)
+                if not response:
+                    break
+                parsed = parse_frame(response)
+                if not parsed:
+                    continue
+                ack_ok = (
+                    (parsed.flags & FLAG_ACK)
+                    and parsed.opcode == opcode
+                    and parsed.src == ID_DRONE
+                    and parsed.dst == ID_PC
+                    and parsed.payload == b""
+                )
+                if ack_ok:
+                    logger.log_event(f"{label} confirmed by ACK")
+                    return {"ok": True, "tx_count": attempt + 1}
+
+            if attempt < send_count - 1:
+                elapsed = time.monotonic() - sent_at
+                time.sleep(max(0.0, retry_interval_s - elapsed))
+
+        return {
+            "ok": False,
+            "error": f"{label.replace('-', ' ').title()} not confirmed",
+            "attempts": send_count,
+            "tx_count": send_count,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.log_event(f"{label} command failed: {exc}")
+        return {"ok": False, "error": str(exc)}
+    finally:
+        state.telemetry_paused = False
+
+
 def _command_code(command: str) -> int | None:
     name = (command or "").strip().upper()
     if not name:
@@ -420,52 +489,52 @@ def _encode_flight_path_payload(cmd: FlightPathCommand, command_id: int) -> byte
     payload.append(_u8(command_id))
 
     if code == 0:  # TAKE_OFF
-        payload += struct.pack("<H", _u16(data.get("height_cm", 0)))
+        payload += struct.pack(">H", _u16(data.get("height_cm", 0)))
     elif code == 1:  # LAND
-        payload += struct.pack("<H", _u16(data.get("delay_s", 0)))
+        payload += struct.pack(">H", _u16(data.get("delay_s", 0)))
     elif code == 2:  # HEIGHT
         payload += struct.pack(
-            "<HH",
+            ">HH",
             _u16(data.get("height_cm", 0)),
             _u16(data.get("speed_cm_s", 0)),
         )
     elif code in (3, 4, 5, 6):  # FORWARD/BACKWARD/LEFT/RIGHT
         payload += struct.pack(
-            "<HH",
+            ">HH",
             _u16(data.get("distance_cm", 0)),
             _u16(data.get("speed_cm_s", 0)),
         )
     elif code in (7, 8):  # ROTATE CW/CCW
         payload += struct.pack(
-            "<HH",
+            ">HH",
             _u16(data.get("angle_deg", 0)),
             _u16(data.get("speed_deg_s", 0)),
         )
     elif code == 9:  # WAIT
-        payload += struct.pack("<H", _u16(data.get("time_s", 0)))
+        payload += struct.pack(">H", _u16(data.get("time_s", 0)))
     elif code == 10:  # HOVER (struct order: time_s, height_cm)
         payload += struct.pack(
-            "<HH",
+            ">HH",
             _u16(data.get("time_s", 0)),
             _u16(data.get("height_cm", 0)),
         )
     elif code == 11:  # FOLLOW
         payload += struct.pack(
-            "<BHH",
+            ">BHH",
             _u8(data.get("follow_mode", 0)),
             _u16(data.get("distance_cm", 0)),
             _u16(data.get("timeout_s", 0)),
         )
     elif code == 12:  # ACTION
         payload += struct.pack(
-            "<BHH",
+            ">BHH",
             _u8(data.get("action_id", 0)),
             _u16(data.get("parameter1", 0)),
             _u16(data.get("parameter2", 0)),
         )
     elif code == 13:  # RETURN_HOME
         payload += struct.pack(
-            "<HH",
+            ">HH",
             _u16(data.get("height_cm", 0)),
             _u16(data.get("speed_cm_s", 0)),
         )
@@ -499,17 +568,13 @@ def _send_drone_flight_path(commands: list[FlightPathCommand]) -> dict:
                 payload=payload,
             )
 
-            # Per requirement: retry each command up to 10 times and wait for ACK
-            send_count = 10
+            # Send each step and require its ACK before moving to the next step.
+            send_count = 3
             confirmed = False
             for attempt in range(send_count):
                 _serial().write(frame)
                 logger.log_frame("drone-flight-path-tx", frame)
                 sent += 1
-
-                if not state.require_status_ack:
-                    confirmed = True
-                    break
 
                 deadline = time.monotonic() + STATE_CONFIRM_TIMEOUT_S
                 while time.monotonic() < deadline:
@@ -986,6 +1051,11 @@ def drone_arm() -> dict:
     return _send_drone_state(TVL_STATE_ARM)
 
 
+@app.post("/drone/disarm")
+def drone_disarm() -> dict:
+    return _send_drone_state(TVL_STATE_IDLE)
+
+
 @app.post("/drone/fly")
 def drone_fly() -> dict:
     return _send_drone_state(TVL_STATE_FLY)
@@ -994,6 +1064,21 @@ def drone_fly() -> dict:
 @app.post("/drone/fly_over")
 def drone_fly_over() -> dict:
     return _send_drone_state(TVL_STATE_FLY_OVER)
+
+
+@app.post("/drone/land_now")
+def drone_land_now() -> dict:
+    return _send_drone_opcode_command(OPT_LAND_NOW, "land-now")
+
+
+@app.post("/drone/e_stop")
+def drone_e_stop() -> dict:
+    return _send_drone_opcode_command(
+        OPT_E_KILL,
+        "e-stop",
+        send_count=10,
+        retry_interval_s=0.5,
+    )
 
 
 @app.post("/drone/fpath_clear")

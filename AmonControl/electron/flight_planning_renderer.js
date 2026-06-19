@@ -27,6 +27,7 @@ const commandParams = document.getElementById("commandParams");
 const addCommandBtn = document.getElementById("addCommandBtn");
 
 let currentProfile = null;
+let sendingFlightPath = false;
 
 const backendUrl = window.electronAPI
   ? window.electronAPI.backendUrl
@@ -574,10 +575,15 @@ if (exportPlanBtn) {
 
 if (sendPlanBtn) {
   sendPlanBtn.addEventListener("click", () => {
+    if (sendingFlightPath) {
+      return;
+    }
     if (!currentProfile || !Array.isArray(currentProfile.commands) || currentProfile.commands.length === 0) {
       setStatus("No commands to send.");
       return;
     }
+    sendingFlightPath = true;
+    sendPlanBtn.disabled = true;
     setStatus("Sending flight path...");
     postJson("/drone/flight_path", { commands: currentProfile.commands })
       .then((result) => {
@@ -585,15 +591,19 @@ if (sendPlanBtn) {
           const base = (result && result.error) || "Failed to send flight path.";
           const details =
             result && typeof result.failed_index === "number"
-              ? `Step ${result.failed_index} failed.`
+              ? `Step ${result.failed_index + 1} failed after ${result.attempts ?? 3} attempts.`
               : "";
           showError(details ? `${base}\n${details}` : base);
           return;
         }
-        showInfo(`Sent ${result.steps_sent ?? currentProfile.commands.length} steps.`);
+        showInfo(`Sent ${result.steps_sent ?? currentProfile.commands.length} steps with ACK.`);
       })
       .catch(() => {
         showError("Failed to send flight path.");
+      })
+      .finally(() => {
+        sendingFlightPath = false;
+        sendPlanBtn.disabled = false;
       });
   });
 }

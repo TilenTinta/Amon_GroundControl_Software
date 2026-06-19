@@ -124,15 +124,15 @@
             <canvas id="chartAlt" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
-            <div class="panel-title">Body Orientation X - Yaw (deg)</div>
+            <div class="panel-title">Body X - Roll (deg)</div>
             <canvas id="chartOriX" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
-            <div class="panel-title">Body Orientation Y - Pitch (deg)</div>
+            <div class="panel-title">Body Y - Pitch (deg)</div>
             <canvas id="chartOriY" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
-            <div class="panel-title">Body Orientation Z - Roll (deg)</div>
+            <div class="panel-title">Body Z - Yaw (deg)</div>
             <canvas id="chartOriZ" width="360" height="170"></canvas>
           </div>
           <div class="chart-card">
@@ -162,7 +162,7 @@
                 <div><span class="label">Mode</span><span id="mode">--</span></div>
                 <div><span class="label">Battery Main</span><span id="battVoltageMain">-- V</span></div>
                 <div><span class="label">Battery EDF</span><span id="battVoltageMotor">-- V</span></div>
-                <div><span class="label">Signal</span><span id="signalDbm">-- dBm</span></div>
+                <div><span class="label">COMMAND</span><span id="signalDbm">-- dBm</span></div>
                 <div><span class="label">TLM</span><span id="tlmRate">-- Hz</span></div>
                 <div><span class="label">GPS</span><span id="gpsSat">--</span></div>
                 <div><span class="label">IMU Temp</span><span id="imuTemp">-- C</span></div>
@@ -189,7 +189,8 @@
                   <button id="flightPlanningBtn" class="ghost" type="button">Flight Planning</button>
                   <button id="armBtn" class="ghost" type="button">Arm</button>
                   <button id="startFlightBtn" class="primary" type="button">Start Flight</button>
-                  <button class="ghost" type="button">Failsafe</button>
+                  <button id="landNowBtn" class="ghost is-disabled" type="button" disabled>Land Now</button>
+                  <button id="eStopBtn" class="ghost is-disabled" type="button" disabled>E Stop</button>
                 </div>
               </section>
             </div>
@@ -293,7 +294,7 @@
                 <div><span class="label">Mode</span><span id="mode">--</span></div>
                 <div><span class="label">Battery Main</span><span id="battVoltageMain">-- V</span></div>
                 <div><span class="label">Battery EDF</span><span id="battVoltageMotor">-- V</span></div>
-                <div><span class="label">Signal</span><span id="signalDbm">-- dBm</span></div>
+                <div><span class="label">COMMAND</span><span id="signalDbm">-- dBm</span></div>
                 <div><span class="label">TLM</span><span id="tlmRate">-- Hz</span></div>
                 <div><span class="label">GPS</span><span id="gpsSat">--</span></div>
                 <div><span class="label">IMU Temp</span><span id="imuTemp">-- C</span></div>
@@ -318,10 +319,10 @@
                 <div class="panel-title">Flight Controls</div>
                 <div class="control-grid">
                   <button id="flightPlanningBtn" class="ghost" type="button">Flight Planning</button>
-                  <button class="ghost" type="button">Arm</button>
+                  <button id="armBtn" class="ghost" type="button">Arm</button>
                   <button id="startFlightBtn" class="primary" type="button">Start Flight</button>
-                  <button class="ghost" type="button">Disarm</button>
-                  <button class="ghost" type="button">Failsafe</button>
+                  <button id="landNowBtn" class="ghost is-disabled" type="button" disabled>Land Now</button>
+                  <button id="eStopBtn" class="ghost is-disabled" type="button" disabled>E Stop</button>
                 </div>
               </section>
             </div>

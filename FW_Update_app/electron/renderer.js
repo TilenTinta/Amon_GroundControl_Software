@@ -40,6 +40,8 @@ let ftdiConnected = false;
 let allowUpload = true;
 let uploadWasInProgress = false;
 const mainBackendUrl = "http://127.0.0.1:8002";
+const FLASH_ERASE_INFO =
+  "Raw flash logging is probably enabled, and it might take a second to erase flash.";
 
 const actionButtons = [
   refreshPortsBtn,
@@ -61,6 +63,11 @@ function addLog(message) {
   if (logList.children.length > 80) {
     logList.removeChild(logList.lastChild);
   }
+}
+
+function showInfoPopup(message) {
+  addLog(message);
+  window.alert(message);
 }
 
 function setStatus(state) {
@@ -479,8 +486,12 @@ if (deleteLogBtn) {
     }
     deleteLogBtn.disabled = true;
     addLog("Sending log delete command...");
+    const eraseInfoTimer = setTimeout(() => {
+      showInfoPopup(FLASH_ERASE_INFO);
+    }, 3000);
     try {
       const result = await fetchMainJson("/log_rm_ftdi", { method: "POST" });
+      clearTimeout(eraseInfoTimer);
       if (!result || !result.ok) {
         addLog(`Delete log failed: ${(result && result.error) || "Unknown error"}`);
         return;
@@ -492,8 +503,10 @@ if (deleteLogBtn) {
           : "Flight log delete command sent."
       );
     } catch (error) {
+      clearTimeout(eraseInfoTimer);
       addLog(`Delete log failed: ${error.message}`);
     } finally {
+      clearTimeout(eraseInfoTimer);
       deleteLogBtn.disabled = false;
     }
   });

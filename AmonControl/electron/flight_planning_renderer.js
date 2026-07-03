@@ -4,6 +4,7 @@ const clearPlanBtn = document.getElementById("clearPlanBtn");
 const exportPlanBtn = document.getElementById("exportPlanBtn");
 const sendPlanBtn = document.getElementById("sendPlanBtn");
 const clearPathBtn = document.getElementById("clearPathBtn");
+const zeroCompassBtn = document.getElementById("zeroCompassBtn");
 const profileStatus = document.getElementById("profileStatus");
 const errorModal = document.getElementById("errorModal");
 const errorMessage = document.getElementById("errorMessage");
@@ -622,6 +623,24 @@ if (clearPathBtn) {
       })
       .catch(() => {
         showError("Failed to clear current path.");
+      });
+  });
+}
+
+if (zeroCompassBtn) {
+  zeroCompassBtn.addEventListener("click", () => {
+    setStatus("Zeroing compass heading...");
+    postJson("/drone/zero_compass")
+      .then((result) => {
+        if (!result || !result.ok) {
+          const base = (result && result.error) || "Failed to zero compass.";
+          showError(base);
+          return;
+        }
+        showInfo("Compass heading zeroed.");
+      })
+      .catch(() => {
+        showError("Failed to zero compass.");
       });
   });
 }

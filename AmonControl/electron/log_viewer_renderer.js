@@ -19,13 +19,38 @@ let activePan = null;
 
 const PLOT_GROUPS = [
   {
-    title: "Drone Attitude",
+    title: "Drone Orientation",
     yLabel: "deg",
     series: [
       { key: "pitch", label: "Pitch", color: "#6ed9ff" },
       { key: "roll", label: "Roll", color: "#f06d6d" },
       { key: "yaw", label: "Yaw", color: "#4dd6a3" },
     ],
+  },
+  {
+    title: "Heading",
+    yLabel: "deg",
+    series: [{ key: "heading_deg", label: "Heading", color: "#f3d36b" }],
+  },
+  {
+    title: "TVC Servo Angles",
+    yLabel: "deg",
+    series: [
+      { key: "servo_xp", label: "X+", color: "#f06d6d" },
+      { key: "servo_xn", label: "X-", color: "#f2b96d" },
+      { key: "servo_yp", label: "Y+", color: "#4dd6a3" },
+      { key: "servo_yn", label: "Y-", color: "#6ed9ff" },
+    ],
+  },
+  {
+    title: "EDF Throttle",
+    yLabel: "%",
+    series: [{ key: "edf_percent", label: "EDF", color: "#f06d6d" }],
+  },
+  {
+    title: "NMPC Solve Time",
+    yLabel: "us",
+    series: [{ key: "nmpc_solver_time", label: "Solve", color: "#caa7ff" }],
   },
   {
     title: "Accelerometer",
@@ -137,6 +162,41 @@ function toNumber(value) {
   return Number.isFinite(num) ? num : null;
 }
 
+function decodeBatteryVoltage(raw) {
+  if (!Number.isFinite(raw)) return null;
+  if (raw <= 0) return 0;
+  return raw < 10000 ? raw / 100 : raw / 1000;
+}
+
+function isInRange(value, min, max) {
+  return !Number.isFinite(value) || (value >= min && value <= max);
+}
+
+function isValidLogRow(row) {
+  if (!Number.isFinite(row.timestamp)) return false;
+  if (!isInRange(row.servo_xp, -180, 180)) return false;
+  if (!isInRange(row.servo_xn, -180, 180)) return false;
+  if (!isInRange(row.servo_yp, -180, 180)) return false;
+  if (!isInRange(row.servo_yn, -180, 180)) return false;
+  if (!isInRange(row.nmpc_solver_time, 0, 1000000)) return false;
+  if (!isInRange(row.heading_deg, -360, 360)) return false;
+  if (!isInRange(row.pitch, -360, 360)) return false;
+  if (!isInRange(row.roll, -360, 360)) return false;
+  if (!isInRange(row.yaw, -360, 360)) return false;
+  if (!isInRange(row.accel_x, -50, 50)) return false;
+  if (!isInRange(row.accel_y, -50, 50)) return false;
+  if (!isInRange(row.accel_z, -50, 50)) return false;
+  if (!isInRange(row.gyro_x, -5000, 5000)) return false;
+  if (!isInRange(row.gyro_y, -5000, 5000)) return false;
+  if (!isInRange(row.gyro_z, -5000, 5000)) return false;
+  if (!isInRange(row.height_tof_mm, 0, 100000)) return false;
+  if (!isInRange(row.battery_main_voltage, 0, 100000)) return false;
+  if (!isInRange(row.battery_edf_voltage, 0, 100000)) return false;
+  if (!isInRange(row.humidity, 0, 100)) return false;
+  if (!isInRange(row.edf_percent, 0, 100)) return false;
+  return true;
+}
+
 function buildDataset(csvText) {
   const rows = parseCsv(String(csvText || "").replace(/^\uFEFF/, ""));
   if (rows.length < 2) {
@@ -156,22 +216,35 @@ function buildDataset(csvText) {
     throw new Error("Selected file is missing the timestamp column.");
   }
 
-  const firstTimestamp = dataRows.find((row) => Number.isFinite(row.timestamp))?.timestamp || 0;
+  const validRows = [];
   dataRows.forEach((row) => {
+    if (!isValidLogRow(row)) {
+      return;
+    }
+    validRows.push(row);
+  });
+
+  if (!validRows.length) {
+    throw new Error("Selected file has no valid log rows.");
+  }
+
+  validRows.sort((left, right) => left.timestamp - right.timestamp);
+
+  const firstTimestamp = validRows.find((row) => Number.isFinite(row.timestamp))?.timestamp || 0;
+  validRows.forEach((row) => {
     row.time_sec = Number.isFinite(row.timestamp) ? (row.timestamp - firstTimestamp) / 1000 : 0;
     row.pressure_hpa = Number.isFinite(row.pressure) ? row.pressure / 100 : null;
     row.height_tof_m = Number.isFinite(row.height_tof_mm) ? row.height_tof_mm / 1000 : null;
+    row.height_baro_m = Number.isFinite(row.height_baro_m) ? row.height_baro_m : null;
+    row.nmpc_solver_time = Number.isFinite(row.nmpc_solver_time) ? row.nmpc_solver_time : null;
+    row.edf_percent = Number.isFinite(row.edf_percent) ? row.edf_percent : null;
     row.temperature_c = Number.isFinite(row.temperature) ? row.temperature / 100 : null;
-    row.battery_main_voltage_v = Number.isFinite(row.battery_main_voltage)
-      ? row.battery_main_voltage / 100
-      : null;
-    row.battery_edf_voltage_v = Number.isFinite(row.battery_edf_voltage)
-      ? row.battery_edf_voltage / 100
-      : null;
+    row.battery_main_voltage_v = decodeBatteryVoltage(row.battery_main_voltage);
+    row.battery_edf_voltage_v = decodeBatteryVoltage(row.battery_edf_voltage);
     row.gyro_temp_c = Number.isFinite(row.gyro_temp) ? row.gyro_temp / 100 : null;
   });
 
-  return { headers, rows: dataRows };
+  return { headers, rows: validRows, droppedRows: dataRows.length - validRows.length };
 }
 
 function valueRange(rows, series) {
@@ -509,7 +582,9 @@ function loadSelectedLog() {
     resetZoom(false);
     renderSummary(dataset);
     renderPlots(dataset);
-    setStatus(`Loaded ${pendingPath || "log file"}.`);
+    const dropped =
+      dataset.droppedRows > 0 ? ` Dropped ${dataset.droppedRows} invalid rows.` : "";
+    setStatus(`Loaded ${pendingPath || "log file"}.${dropped}`);
   } catch (error) {
     setStatus(error.message || "Failed to parse log file.");
   }

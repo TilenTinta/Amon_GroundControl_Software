@@ -36,6 +36,7 @@ class LinkState:
     telemetry_lock: threading.Lock = field(default_factory=threading.Lock)
     last_tlm_ts: float = 0.0
     tlm_rate_hz: float = 0.0
+    telemetry_seq: int = 0
 
 
     # Load saved config after dataclass init

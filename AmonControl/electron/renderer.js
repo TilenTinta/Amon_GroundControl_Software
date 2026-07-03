@@ -138,6 +138,8 @@ let orientation = { roll: 0, pitch: 0, yaw: 0 };
 let orientationTarget = { roll: 0, pitch: 0, yaw: 0 };
 let simTime = 0;
 let latestTelemetry = null;
+let latestTelemetrySeq = 0;
+let armTelemetryWatchTimer = null;
 const MODEL_RESPONSE = 0.7;
 let lastChartTick = performance.now();
 let telemetryInFlight = false;
@@ -196,6 +198,18 @@ function resetMission() {
   updateEmergencyControls();
 }
 
+function resetMissionTimer() {
+  missionRunning = false;
+  missionElapsed = 0;
+  missionStart = 0;
+  if (fields.clockMission) {
+    fields.clockMission.textContent = "00:00:00";
+  }
+  if (startFlightBtn) {
+    startFlightBtn.textContent = "Start Flight";
+  }
+}
+
 let toastTimer = null;
 function showWarning(message) {
   if (!warnToast) {
@@ -209,6 +223,30 @@ function showWarning(message) {
   toastTimer = setTimeout(() => {
     warnToast.classList.add("hidden");
   }, 1600);
+}
+
+function showInfoPopup(message) {
+  showWarning(message);
+  window.alert(message);
+}
+
+function cancelArmTelemetryWatch() {
+  if (armTelemetryWatchTimer) {
+    clearTimeout(armTelemetryWatchTimer);
+    armTelemetryWatchTimer = null;
+  }
+}
+
+function scheduleArmTelemetryWatch(previousSeq) {
+  cancelArmTelemetryWatch();
+  armTelemetryWatchTimer = setTimeout(() => {
+    armTelemetryWatchTimer = null;
+    if (latestTelemetrySeq <= previousSeq) {
+      showInfoPopup(
+        "No telemetry received after arming. Raw flash logging is probably enabled, and it might take a second to erase flash.",
+      );
+    }
+  }, 3000);
 }
 
 function updateClocks() {
@@ -273,7 +311,7 @@ function bindTelemetryElements() {
     signalDbm: document.getElementById("signalDbm"),
     tlmRate: document.getElementById("tlmRate"),
     gpsSat: document.getElementById("gpsSat"),
-    imuTemp: document.getElementById("imuTemp"),
+    solveTime: document.getElementById("solveTime"),
     baroAlt: document.getElementById("baroAlt"),
     rollVal: document.getElementById("rollVal"),
     pitchVal: document.getElementById("pitchVal"),
@@ -320,7 +358,7 @@ function bindTelemetryElements() {
     bAt2: document.getElementById("bAt2"),
     uD: document.getElementById("uD"),
     hum: document.getElementById("hum"),
-    ign: document.getElementById("ign"),
+    imuTempRaw: document.getElementById("imuTempRaw"),
     state: document.getElementById("state"),
     clockLocal: document.getElementById("clockLocal"),
     clockMission: document.getElementById("clockMission"),
@@ -331,7 +369,6 @@ function bindTelemetryElements() {
 function bindTelemetryControls() {
   startFlightBtn = document.getElementById("startFlightBtn");
   const armBtn = document.getElementById("armBtn");
-  const landNowBtn = document.getElementById("landNowBtn");
   const eStopBtn = document.getElementById("eStopBtn");
   const flightPlanningBtn = document.getElementById("flightPlanningBtn");
   if (!startFlightBtn) {
@@ -360,14 +397,12 @@ function bindTelemetryControls() {
       startFlightBtn.textContent = "Stop Flight";
       updateEmergencyControls();
     } else {
-      try {
-        const result = await fetchJson("/drone/fly_over", { method: "POST" });
-        if (!result || !result.ok) {
-          showWarning((result && result.error) || "Failed to send fly-over command.");
-          return;
-        }
-      } catch (error) {
-        showWarning("Failed to send fly-over command.");
+      const stopped = await sendDroneCommand(
+        "/drone/land_now",
+        "Land now command acknowledged.",
+        "Failed to send land now command.",
+      );
+      if (!stopped) {
         return;
       }
       missionRunning = false;
@@ -380,15 +415,30 @@ function bindTelemetryControls() {
     armBtn.addEventListener("click", async () => {
       const endpoint = isArmed ? "/drone/disarm" : "/drone/arm";
       const action = isArmed ? "disarm" : "arm";
+      const previousTelemetrySeq = latestTelemetrySeq;
+      if (!isArmed) {
+        scheduleArmTelemetryWatch(previousTelemetrySeq);
+      } else {
+        cancelArmTelemetryWatch();
+      }
       try {
         const result = await fetchJson(endpoint, { method: "POST" });
         if (!result || !result.ok) {
+          if (action !== "arm") {
+            cancelArmTelemetryWatch();
+          }
           showWarning((result && result.error) || `Failed to send ${action} command.`);
           return;
         }
       } catch (error) {
+        if (action !== "arm") {
+          cancelArmTelemetryWatch();
+        }
         showWarning(`Failed to send ${action} command.`);
         return;
+      }
+      if (!isArmed) {
+        resetMissionTimer();
       }
       isArmed = !isArmed;
       armBtn.textContent = isArmed ? "Disarm" : "Arm";
@@ -398,15 +448,6 @@ function bindTelemetryControls() {
         startFlightBtn.classList.toggle("is-disabled", !isArmed);
       }
       updateEmergencyControls();
-    });
-  }
-
-  if (landNowBtn) {
-    landNowBtn.addEventListener("click", () => {
-      if (landNowBtn.disabled) {
-        return;
-      }
-      sendDroneCommand("/drone/land_now", "Land now command acknowledged.", "Failed to send land now command.");
     });
   }
 
@@ -467,16 +508,8 @@ async function sendDroneCommand(path, successMessage, failureMessage) {
 }
 
 function updateEmergencyControls() {
-  const landNowBtn = document.getElementById("landNowBtn");
   const eStopBtn = document.getElementById("eStopBtn");
-  const landNowEnabled = missionRunning;
   const eStopEnabled = isArmed || missionRunning;
-
-  if (landNowBtn) {
-    landNowBtn.disabled = !landNowEnabled;
-    landNowBtn.classList.toggle("ghost", true);
-    landNowBtn.classList.toggle("is-disabled", !landNowEnabled);
-  }
 
   if (eStopBtn) {
     eStopBtn.disabled = !eStopEnabled;
@@ -594,6 +627,8 @@ function zeroTelemetry() {
   return {
     flight_state: "Idle",
     flight_phase: "-",
+    flight_command: "-",
+    _telemetry_seq: 0,
     battery_v: 0,
     battery_main_v: 0,
     battery_motor_v: 0,
@@ -601,6 +636,7 @@ function zeroTelemetry() {
     tlm_rate: 0,
     gps_sat: 0,
     imu_temp: 0,
+    solve_time_us: 0,
     baro_alt: 0,
     temperature_c: 0,
     humidity_pct: 0,
@@ -637,7 +673,7 @@ function zeroTelemetry() {
       bAt: 0,
       bAt2: 0,
       uD: 0,
-      ign: 0,
+      imu_temp: 0,
       state: "--",
     },
   };
@@ -645,6 +681,17 @@ function zeroTelemetry() {
 
 function format(value, decimals = 1) {
   return Number(value).toFixed(decimals);
+}
+
+function formatSolveTime(valueUs) {
+  const us = Number(valueUs);
+  if (!Number.isFinite(us)) {
+    return "--";
+  }
+  if (Math.abs(us) >= 1000) {
+    return `${format(us / 1000, 5)} ms`;
+  }
+  return `${format(us, 2)} us`;
 }
 
 function mapAmonBodyAxes(orientationSource) {
@@ -693,6 +740,9 @@ function updateTelemetry(data, cacheUpdate = true) {
   const t = data || zeroTelemetry();
   if (data && cacheUpdate) {
     latestTelemetry = t;
+    if (Number.isFinite(Number(t._telemetry_seq))) {
+      latestTelemetrySeq = Number(t._telemetry_seq);
+    }
     if (activeDrone !== "talon") {
       orientationTarget = { ...(t.orientation || { roll: 0, pitch: 0, yaw: 0 }) };
     }
@@ -719,14 +769,12 @@ function updateTelemetry(data, cacheUpdate = true) {
   if (fields.battVoltageMotor) {
     updateVoltageField(fields.battVoltageMotor, t.battery_motor_v || 0, 21.0);
   }
-  if (fields.signalDbm) fields.signalDbm.textContent = `${format(t.signal_dbm, 0)} dBm`;
+  if (fields.signalDbm) fields.signalDbm.textContent = t.flight_command || "--";
   if (fields.tlmRate) fields.tlmRate.textContent = `${format(t.tlm_rate, 2)} Hz`;
   if (fields.gpsSat) fields.gpsSat.textContent = `${t.gps_sat}`;
-  const displayTemp =
-    typeof t.imu_temp === "number" && t.imu_temp !== 0
-      ? t.imu_temp
-      : t.temperature_c || 0;
-  if (fields.imuTemp) fields.imuTemp.textContent = `${format(displayTemp, 1)} C`;
+  if (fields.solveTime) {
+    fields.solveTime.textContent = formatSolveTime(t.solve_time_us ?? t.solve_time_ms ?? 0);
+  }
   if (fields.baroAlt) fields.baroAlt.textContent = `${format(t.baro_alt, 1)} m`;
   if (fields.rollVal) fields.rollVal.textContent = `${format(t.orientation.roll, 1)} deg`;
   if (fields.pitchVal) fields.pitchVal.textContent = `${format(t.orientation.pitch, 1)} deg`;
@@ -789,7 +837,14 @@ function updateTelemetry(data, cacheUpdate = true) {
   if (fields.bAt2) fields.bAt2.textContent = `${format(raw.bAt2 ?? 0, 2)} V`;
   if (fields.uD) fields.uD.textContent = `${format(raw.uD ?? 0, 2)} cm`;
   if (fields.hum) fields.hum.textContent = `${format(raw.hum ?? 0, 0)} %`;
-  if (fields.ign) fields.ign.textContent = `${raw.ign ?? "--"}`;
+  const rawImuTemp =
+    typeof t.imu_temp === "number" && t.imu_temp !== 0
+      ? t.imu_temp
+      : raw.imu_temp ?? "--";
+  if (fields.imuTempRaw) {
+    fields.imuTempRaw.textContent =
+      typeof rawImuTemp === "number" ? `${format(rawImuTemp, 1)} C` : `${rawImuTemp}`;
+  }
   if (fields.state) fields.state.textContent = `${raw.state ?? "--"}`;
 }
 

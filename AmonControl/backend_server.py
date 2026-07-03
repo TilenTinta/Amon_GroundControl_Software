@@ -35,6 +35,7 @@ from backend.protocol import (
     OPT_LAND_NOW,
     OPT_LOG_DUMP,
     OPT_LOG_RM,
+    OPT_ZERO_COMPAS,
     OPT_TELEMETRY,
     OPT_TELEMETRY_STREAM,
     TVL_ALT,
@@ -44,12 +45,14 @@ from backend.protocol import (
     TVL_DATE_TIME,
     TVL_DRONE_MODE,
     TVL_ERR,
+    TVL_FLIGHT_COM,
     TVL_FLIGHT_MODE,
     TVL_IMU,
     TVL_IMU_TEMP,
     TVL_RF_FAIL_CNT,
     TVL_RF_STREAM,
     TVL_RF_TX_CNT,
+    TVL_SOLVE_TIME,
     TVL_THP,
     TVL_TLM,
     TVL_THROTTLE,
@@ -106,27 +109,36 @@ ftdi_port = ""
 ftdi_baud_rate = 0
 TX_RETRY_DELAY_S = 0.1
 STATE_CONFIRM_TIMEOUT_S = 0.25
-LOG_RECORD_STRUCT = struct.Struct("<IfffH2xffffffHHHHHBxI")
-LOG_DUMP_MAX_DURATION_S = 10.0
+# Firmware log record order. The current record is 84 bytes:
+# u32 timestamp, 15 floats, six u16 tail fields, u32 pressure, humidity, EDF, padding.
+LOG_RECORD_STRUCT = struct.Struct("<IfffffffffffffffHHHHHHIBB2x")
+LOG_DUMP_MAX_DURATION_S = 120.0
 LOG_CSV_HEADERS = [
     "timestamp",
+    "servo_xp",
+    "servo_xn",
+    "servo_yp",
+    "servo_yn",
+    "nmpc_solver_time",
+    "heading_deg",
     "pitch",
     "roll",
     "yaw",
-    "gyro_temp",
     "accel_x",
     "accel_y",
     "accel_z",
     "gyro_x",
     "gyro_y",
     "gyro_z",
+    "gyro_temp",
     "height_tof_mm",
     "height_baro_m",
     "battery_main_voltage",
     "battery_edf_voltage",
     "temperature",
-    "humidity",
     "pressure",
+    "humidity",
+    "edf_percent",
 ]
 
 
@@ -141,6 +153,7 @@ def _zero_payload() -> dict:
         "tlm_rate": 0,
         "gps_sat": 0,
         "imu_temp": 0,
+        "solve_time_us": 0,
         "baro_alt": 0,
         "temperature_c": 0,
         "humidity_pct": 0,
@@ -157,12 +170,15 @@ def _zero_payload() -> dict:
         "packet_loss": 0,
         "mode": "-",
         "flight_phase": "-",
+        "flight_command": "-",
+        "_telemetry_seq": 0,
         "raw": {
             "bPs": 0,
             "tP": 0,
             "hum": 0,
             "bAt": 0,
             "bAt2": 0,
+            "imu_temp": 0,
         },
     }
 
@@ -182,6 +198,7 @@ def _sync_connection_state() -> None:
         state.baud_rate = 0
         state.error_tx_streak = 0
         state.drone_connected = False
+        state.telemetry_seq = 0
         with state.telemetry_lock:
             state.last_telemetry = _zero_payload()
 
@@ -236,10 +253,18 @@ def _send_drone_state(state_code: int) -> dict:
                     return False
                 mode = payload[idx]
                 return (mode & 0x0F) == expected_state_nibble
-            if tlv in (TVL_RF_STREAM, TVL_TLM, TVL_THROTTLE, TVL_FLIGHT_MODE):
+            if tlv in (TVL_RF_STREAM, TVL_TLM, TVL_THROTTLE, TVL_FLIGHT_MODE, TVL_FLIGHT_COM):
                 idx += 1
-            elif tlv in (TVL_BAT_MAIN, TVL_BAT_EDF, TVL_ERR, TVL_ALT, TVL_IMU_TEMP):
+            elif tlv in (
+                TVL_BAT_MAIN,
+                TVL_BAT_EDF,
+                TVL_ERR,
+                TVL_ALT,
+                TVL_IMU_TEMP,
+            ):
                 idx += 2
+            elif tlv == TVL_SOLVE_TIME:
+                idx += 4
             elif tlv == TVL_DATE_TIME:
                 idx += 6
             elif tlv in (TVL_RF_TX_CNT, TVL_RF_FAIL_CNT):
@@ -512,11 +537,11 @@ def _encode_flight_path_payload(cmd: FlightPathCommand, command_id: int) -> byte
         )
     elif code == 9:  # WAIT
         payload += struct.pack(">H", _u16(data.get("time_s", 0)))
-    elif code == 10:  # HOVER (struct order: time_s, height_cm)
+    elif code == 10:  # HOVER (struct order: height_cm, time_s)
         payload += struct.pack(
             ">HH",
-            _u16(data.get("time_s", 0)),
             _u16(data.get("height_cm", 0)),
+            _u16(data.get("time_s", 0)),
         )
     elif code == 11:  # FOLLOW
         payload += struct.pack(
@@ -643,6 +668,26 @@ def _flight_status_label(code: int) -> str:
     return labels.get(code, f"Flight {code}")
 
 
+def _flight_command_label(code: int) -> str:
+    labels = {
+        0: "Take Off",
+        1: "Land",
+        2: "Height",
+        3: "Forward",
+        4: "Backward",
+        5: "Left",
+        6: "Right",
+        7: "Rotate CW",
+        8: "Rotate CCW",
+        9: "Wait",
+        10: "Hover",
+        11: "Follow",
+        12: "Action",
+        13: "Return Home",
+    }
+    return labels.get(code, f"Command {code}")
+
+
 
 # Decode TLV payload into GUI fields
 def _parse_tlv_payload(payload: bytes) -> dict:
@@ -762,7 +807,7 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             )
             idx += 7
             baro_alt_raw = None
-            if idx + 2 <= len(payload):
+            if idx + 2 == len(payload):
                 baro_alt_raw = (payload[idx] << 8) | payload[idx + 1]
                 idx += 2
             updates["temperature_c"] = temp_raw / 100.0
@@ -787,6 +832,14 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             idx += 1
             updates["throttle"] = thr
             raw_updates["thr"] = thr
+
+        elif tlv == TVL_FLIGHT_COM:
+            if idx + 1 > len(payload):
+                break
+            flight_command = payload[idx]
+            idx += 1
+            updates["flight_command"] = _flight_command_label(flight_command)
+            raw_updates["flight_command"] = updates["flight_command"]
 
         elif tlv == TVL_SERVO_ANGL:
             if idx + 8 > len(payload):
@@ -864,6 +917,19 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             imu_temp = _signed16((payload[idx] << 8) | payload[idx + 1])
             idx += 2
             updates["imu_temp"] = imu_temp / angle_scale
+            raw_updates["imu_temp"] = updates["imu_temp"]
+
+        elif tlv == TVL_SOLVE_TIME:
+            if idx + 4 > len(payload):
+                break
+            solve_time = (
+                (payload[idx] << 24)
+                | (payload[idx + 1] << 16)
+                | (payload[idx + 2] << 8)
+                | payload[idx + 3]
+            )
+            idx += 4
+            updates["solve_time_us"] = solve_time / angle_scale
 
         else:
             break
@@ -909,7 +975,9 @@ def _apply_telemetry(decoded: dict) -> None:
                     rate if state.tlm_rate_hz == 0 else (state.tlm_rate_hz * 0.8 + rate * 0.2)
                 )
         state.last_tlm_ts = now
+        state.telemetry_seq += 1
         payload["tlm_rate"] = state.tlm_rate_hz
+        payload["_telemetry_seq"] = state.telemetry_seq
         if raw_updates:
             payload.setdefault("raw", {})
             payload["raw"].update(raw_updates)
@@ -988,6 +1056,7 @@ def connect(request: ConnectRequest) -> dict:
         state.drone_connected = False
 
         with state.telemetry_lock:
+            state.telemetry_seq = 0
             state.last_telemetry = _zero_payload()
         try:
             # Check that telemetry stream is disabled when opening link
@@ -1024,6 +1093,7 @@ def disconnect() -> dict:
     state.baud_rate = 0
     state.error_tx_streak = 0
     state.drone_connected = False
+    state.telemetry_seq = 0
     with state.telemetry_lock:
         state.last_telemetry = _zero_payload()
     logger.log_event("Disconnected")
@@ -1084,6 +1154,15 @@ def drone_e_stop() -> dict:
 @app.post("/drone/fpath_clear")
 def drone_fpath_clear() -> dict:
     return _send_drone_fpath_clear()
+
+
+@app.post("/drone/zero_compass")
+def drone_zero_compass() -> dict:
+    return _send_drone_opcode_command(
+        OPT_ZERO_COMPAS,
+        "zero-compass",
+        send_count=10,
+    )
 
 
 @app.post("/drone/flight_path")

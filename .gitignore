@@ -11,6 +11,8 @@ AmonControl/.venv
 *.so
 *.dylib
 *.bin
+.venv
+.agent
 
 # Electron and large files
 **/electron/dist/

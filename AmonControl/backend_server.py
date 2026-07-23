@@ -12,6 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import csv
+import json
+import math
 from pathlib import Path
 import struct
 import threading
@@ -109,37 +111,108 @@ ftdi_port = ""
 ftdi_baud_rate = 0
 TX_RETRY_DELAY_S = 0.1
 STATE_CONFIRM_TIMEOUT_S = 0.25
-# Firmware log record order. The current record is 84 bytes:
-# u32 timestamp, 15 floats, six u16 tail fields, u32 pressure, humidity, EDF, padding.
-LOG_RECORD_STRUCT = struct.Struct("<IfffffffffffffffHHHHHHIBB2x")
+LOG_SCHEMA_PATH = Path(__file__).resolve().parent / "backend" / "log_schema.json"
+LOG_TYPE_FORMATS = {
+    "u8": "B",
+    "i8": "b",
+    "u16": "H",
+    "i16": "h",
+    "u32": "I",
+    "i32": "i",
+    "float": "f",
+    "f32": "f",
+}
+
+
+def _load_log_schema() -> tuple[struct.Struct, list[str]]:
+    schema = json.loads(LOG_SCHEMA_PATH.read_text(encoding="utf-8"))
+    byte_order = schema.get("byte_order", "<")
+    fmt_parts = [byte_order]
+    headers = []
+
+    for field in schema.get("fields", []):
+        field_type = field.get("type")
+        if field_type == "pad":
+            size = int(field.get("size", 1))
+            fmt_parts.append(f"{size}x" if size > 1 else "x")
+            continue
+
+        fmt = LOG_TYPE_FORMATS.get(field_type)
+        if not fmt:
+            raise ValueError(f"Unsupported log field type: {field_type}")
+        fmt_parts.append(fmt)
+        if field.get("csv", True):
+            headers.append(str(field["name"]))
+
+    return struct.Struct("".join(fmt_parts)), headers
+
+
+LOG_RECORD_STRUCT, LOG_CSV_HEADERS = _load_log_schema()
 LOG_DUMP_MAX_DURATION_S = 120.0
-LOG_CSV_HEADERS = [
-    "timestamp",
-    "servo_xp",
-    "servo_xn",
-    "servo_yp",
-    "servo_yn",
-    "nmpc_solver_time",
-    "heading_deg",
-    "pitch",
-    "roll",
-    "yaw",
-    "accel_x",
-    "accel_y",
-    "accel_z",
-    "gyro_x",
-    "gyro_y",
-    "gyro_z",
-    "gyro_temp",
-    "height_tof_mm",
-    "height_baro_m",
-    "battery_main_voltage",
-    "battery_edf_voltage",
-    "temperature",
-    "pressure",
-    "humidity",
-    "edf_percent",
-]
+
+
+def _log_record_dict(record: tuple) -> dict:
+    return dict(zip(LOG_CSV_HEADERS, record))
+
+
+def _log_value_in_range(row: dict, key: str, minimum: float, maximum: float) -> bool:
+    value = row.get(key)
+    return value is None or (
+        isinstance(value, (int, float))
+        and math.isfinite(float(value))
+        and minimum <= float(value) <= maximum
+    )
+
+
+def _is_valid_log_record(record: tuple) -> bool:
+    row = _log_record_dict(record)
+    if not _log_value_in_range(row, "timestamp", 0, 0xFFFFFFFF):
+        return False
+    checks = (
+        ("servo_xp", -180, 180),
+        ("servo_xn", -180, 180),
+        ("servo_yp", -180, 180),
+        ("servo_yn", -180, 180),
+        ("nmpc_solver_time", 0, 1000000),
+        ("nmpc_solve_status", -10000, 10000),
+        ("nmpc_last_qp_iter", -10000, 10000),
+        ("nmpc_last_qp_status", -10000, 10000),
+        ("heading_deg", -360, 360),
+        ("pitch", -360, 360),
+        ("roll", -360, 360),
+        ("yaw", -360, 360),
+        ("accel_x", -50, 50),
+        ("accel_y", -50, 50),
+        ("accel_z", -50, 50),
+        ("gyro_x", -5000, 5000),
+        ("gyro_y", -5000, 5000),
+        ("gyro_z", -5000, 5000),
+        ("quaternion_w", -1.1, 1.1),
+        ("quaternion_x", -1.1, 1.1),
+        ("quaternion_y", -1.1, 1.1),
+        ("quaternion_z", -1.1, 1.1),
+        ("height_tof_m_filtered", 0, 1000),
+        ("height_tof_mm", 0, 100000),
+        ("height_baro_m", 0, 10000),
+        ("battery_main_voltage", 0, 100000),
+        ("battery_edf_voltage", 0, 100000),
+        ("temperature", 0, 10000),
+        ("pressure", 30000, 120000),
+        ("humidity", 0, 100),
+        ("edf_percent", 0, 100),
+    )
+    return all(_log_value_in_range(row, key, minimum, maximum) for key, minimum, maximum in checks)
+
+
+def _is_continuous_log_record(previous: tuple | None, current: tuple) -> bool:
+    if previous is None:
+        return True
+    previous_ts = _log_record_dict(previous).get("timestamp")
+    current_ts = _log_record_dict(current).get("timestamp")
+    if not isinstance(previous_ts, (int, float)) or not isinstance(current_ts, (int, float)):
+        return False
+    delta = float(current_ts) - float(previous_ts)
+    return 0 < delta <= 1000
 
 
 def _zero_payload() -> dict:
@@ -217,12 +290,20 @@ def _decode_log_records(raw: bytes) -> tuple[list[tuple], int]:
     total = len(raw) // rec_size
     valid = raw[: total * rec_size]
     records = []
+    ignored_records = 0
     for idx in range(total):
         start = idx * rec_size
         end = start + rec_size
-        records.append(LOG_RECORD_STRUCT.unpack(valid[start:end]))
+        record = LOG_RECORD_STRUCT.unpack(valid[start:end])
+        previous = records[-1] if records else None
+        if not _is_valid_log_record(record) or not _is_continuous_log_record(previous, record):
+            if records:
+                ignored_records = total - idx
+                break
+            continue
+        records.append(record)
     leftover = len(raw) - len(valid)
-    return records, leftover
+    return records, leftover + (ignored_records * rec_size)
 
 
 def _write_log_csv(path_text: str, records: list[tuple]) -> Path:

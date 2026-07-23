@@ -84,7 +84,7 @@ const chartConfig = [
   },
   {
     id: "chartAlt",
-    yLabel: "m",
+    yLabel: "cm",
     xLabel: "time (s)",
     series: [
       { key: "alt", color: "#3fd2b6" },

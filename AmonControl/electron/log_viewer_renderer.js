@@ -72,8 +72,11 @@ const PLOT_GROUPS = [
   },
   {
     title: "TOF Height",
-    yLabel: "m",
-    series: [{ key: "height_tof_m", label: "TOF", color: "#3fd2b6" }],
+    yLabel: "cm",
+    series: [
+      { key: "height_tof_filtered_cm", label: "Filtered", color: "#3fd2b6" },
+      { key: "height_tof_cm", label: "Raw", color: "#8a96a8" },
+    ],
   },
   {
     title: "Barometer Height",
@@ -165,6 +168,7 @@ function toNumber(value) {
 function decodeBatteryVoltage(raw) {
   if (!Number.isFinite(raw)) return null;
   if (raw <= 0) return 0;
+  if (raw < 100) return raw;
   return raw < 10000 ? raw / 100 : raw / 1000;
 }
 
@@ -179,6 +183,9 @@ function isValidLogRow(row) {
   if (!isInRange(row.servo_yp, -180, 180)) return false;
   if (!isInRange(row.servo_yn, -180, 180)) return false;
   if (!isInRange(row.nmpc_solver_time, 0, 1000000)) return false;
+  if (!isInRange(row.nmpc_solve_status, -10000, 10000)) return false;
+  if (!isInRange(row.nmpc_last_qp_iter, -10000, 10000)) return false;
+  if (!isInRange(row.nmpc_last_qp_status, -10000, 10000)) return false;
   if (!isInRange(row.heading_deg, -360, 360)) return false;
   if (!isInRange(row.pitch, -360, 360)) return false;
   if (!isInRange(row.roll, -360, 360)) return false;
@@ -189,12 +196,26 @@ function isValidLogRow(row) {
   if (!isInRange(row.gyro_x, -5000, 5000)) return false;
   if (!isInRange(row.gyro_y, -5000, 5000)) return false;
   if (!isInRange(row.gyro_z, -5000, 5000)) return false;
+  if (!isInRange(row.quaternion_w, -1.1, 1.1)) return false;
+  if (!isInRange(row.quaternion_x, -1.1, 1.1)) return false;
+  if (!isInRange(row.quaternion_y, -1.1, 1.1)) return false;
+  if (!isInRange(row.quaternion_z, -1.1, 1.1)) return false;
+  if (!isInRange(row.height_tof_m_filtered, 0, 1000)) return false;
   if (!isInRange(row.height_tof_mm, 0, 100000)) return false;
+  if (!isInRange(row.height_baro_m, 0, 10000)) return false;
   if (!isInRange(row.battery_main_voltage, 0, 100000)) return false;
   if (!isInRange(row.battery_edf_voltage, 0, 100000)) return false;
+  if (!isInRange(row.temperature, 0, 10000)) return false;
+  if (!isInRange(row.pressure, 30000, 120000)) return false;
   if (!isInRange(row.humidity, 0, 100)) return false;
   if (!isInRange(row.edf_percent, 0, 100)) return false;
   return true;
+}
+
+function hasContinuousTimestamp(row, previousRow) {
+  if (!previousRow) return true;
+  const delta = row.timestamp - previousRow.timestamp;
+  return Number.isFinite(delta) && delta > 0 && delta <= 1000;
 }
 
 function buildDataset(csvText) {
@@ -217,24 +238,27 @@ function buildDataset(csvText) {
   }
 
   const validRows = [];
-  dataRows.forEach((row) => {
-    if (!isValidLogRow(row)) {
-      return;
+  for (const row of dataRows) {
+    const previousRow = validRows[validRows.length - 1];
+    if (!isValidLogRow(row) || !hasContinuousTimestamp(row, previousRow)) {
+      if (validRows.length) break;
+      continue;
     }
     validRows.push(row);
-  });
+  }
 
   if (!validRows.length) {
     throw new Error("Selected file has no valid log rows.");
   }
 
-  validRows.sort((left, right) => left.timestamp - right.timestamp);
-
   const firstTimestamp = validRows.find((row) => Number.isFinite(row.timestamp))?.timestamp || 0;
   validRows.forEach((row) => {
     row.time_sec = Number.isFinite(row.timestamp) ? (row.timestamp - firstTimestamp) / 1000 : 0;
     row.pressure_hpa = Number.isFinite(row.pressure) ? row.pressure / 100 : null;
-    row.height_tof_m = Number.isFinite(row.height_tof_mm) ? row.height_tof_mm / 1000 : null;
+    row.height_tof_cm = Number.isFinite(row.height_tof_mm) ? row.height_tof_mm / 10 : null;
+    row.height_tof_filtered_cm = Number.isFinite(row.height_tof_m_filtered)
+      ? row.height_tof_m_filtered * 100
+      : null;
     row.height_baro_m = Number.isFinite(row.height_baro_m) ? row.height_baro_m : null;
     row.nmpc_solver_time = Number.isFinite(row.nmpc_solver_time) ? row.nmpc_solver_time : null;
     row.edf_percent = Number.isFinite(row.edf_percent) ? row.edf_percent : null;

@@ -15,7 +15,7 @@
       "command_id": 1,
       "command": "COMM_HOVER",
       "data": {
-        "time_s": 10,
+        "time_s": 15,
         "height_cm": 100
       }
     },

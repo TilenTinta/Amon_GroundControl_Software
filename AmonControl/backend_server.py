@@ -46,6 +46,8 @@ from backend.protocol import (
     TVL_BAT_MAIN,
     TVL_DATE_TIME,
     TVL_DRONE_MODE,
+    TVL_DRONE_POS,
+    TVL_DRONE_VEL,
     TVL_ERR,
     TVL_FLIGHT_COM,
     TVL_FLIGHT_MODE,
@@ -357,7 +359,7 @@ def _send_drone_state(state_code: int) -> dict:
                 idx += 7
                 if idx + 2 <= len(payload):
                     idx += 2
-            elif tlv == TVL_ANGL:
+            elif tlv in (TVL_ANGL, TVL_DRONE_POS, TVL_DRONE_VEL):
                 idx += 6
             elif tlv == TVL_SERVO_ANGL:
                 idx += 8
@@ -778,6 +780,8 @@ def _parse_tlv_payload(payload: bytes) -> dict:
     battery_edf_set = False
     battery_seen = 0
     angle_scale = 100.0
+    position_scale = 1000.0
+    velocity_scale = 1000.0
     idx = 0
 
     while idx < len(payload):
@@ -970,6 +974,38 @@ def _parse_tlv_payload(payload: bytes) -> dict:
             tof_mm = (payload[idx] << 8) | payload[idx + 1]
             idx += 2
             raw_updates["uD"] = tof_mm / 10.0
+
+        elif tlv == TVL_DRONE_POS:
+            if idx + 6 > len(payload):
+                break
+            pos_x = _signed16((payload[idx] << 8) | payload[idx + 1])
+            pos_y = _signed16((payload[idx + 2] << 8) | payload[idx + 3])
+            pos_z = _signed16((payload[idx + 4] << 8) | payload[idx + 5])
+            idx += 6
+            updates["position"] = {
+                "x": pos_x / position_scale,
+                "y": pos_y / position_scale,
+                "z": pos_z / position_scale,
+            }
+            raw_updates["pXs"] = updates["position"]["x"]
+            raw_updates["pYs"] = updates["position"]["y"]
+            raw_updates["pZs"] = updates["position"]["z"]
+
+        elif tlv == TVL_DRONE_VEL:
+            if idx + 6 > len(payload):
+                break
+            vel_x = _signed16((payload[idx] << 8) | payload[idx + 1])
+            vel_y = _signed16((payload[idx + 2] << 8) | payload[idx + 3])
+            vel_z = _signed16((payload[idx + 4] << 8) | payload[idx + 5])
+            idx += 6
+            updates["velocity"] = {
+                "vx": vel_x / velocity_scale,
+                "vy": vel_y / velocity_scale,
+                "vz": vel_z / velocity_scale,
+            }
+            raw_updates["vXs"] = updates["velocity"]["vx"]
+            raw_updates["vYs"] = updates["velocity"]["vy"]
+            raw_updates["vZs"] = updates["velocity"]["vz"]
 
         elif tlv == TVL_IMU:
             if idx + 12 > len(payload):

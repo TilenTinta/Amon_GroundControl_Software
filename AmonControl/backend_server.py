@@ -217,6 +217,10 @@ def _is_continuous_log_record(previous: tuple | None, current: tuple) -> bool:
     return 0 < delta <= 1000
 
 
+def _is_blank_log_chunk(chunk: bytes) -> bool:
+    return not chunk or all(byte == 0x00 for byte in chunk) or all(byte == 0xFF for byte in chunk)
+
+
 def _zero_payload() -> dict:
     # Baseline telemetry payload for UI when no data is available
     return {
@@ -296,9 +300,12 @@ def _decode_log_records(raw: bytes) -> tuple[list[tuple], int]:
     for idx in range(total):
         start = idx * rec_size
         end = start + rec_size
+        if _is_blank_log_chunk(valid[start:end]):
+            ignored_records = total - idx
+            break
         record = LOG_RECORD_STRUCT.unpack(valid[start:end])
         previous = records[-1] if records else None
-        if not _is_valid_log_record(record) or not _is_continuous_log_record(previous, record):
+        if not _is_continuous_log_record(previous, record):
             if records:
                 ignored_records = total - idx
                 break

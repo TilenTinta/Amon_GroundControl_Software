@@ -994,9 +994,9 @@ function animate() {
         const yawWithOffset = yaw - 90;
         // Yaw-first order reduces pitch/roll coupling for this model orientation.
         modelMesh.rotation.order = "YXZ";
-        modelMesh.rotation.x = THREE.MathUtils.degToRad(roll);
+        modelMesh.rotation.x = THREE.MathUtils.degToRad(-roll);
         modelMesh.rotation.y = THREE.MathUtils.degToRad(yawWithOffset);
-        modelMesh.rotation.z = THREE.MathUtils.degToRad(pitch);
+        modelMesh.rotation.z = THREE.MathUtils.degToRad(-pitch);
       } else {
         modelMesh.rotation.x = THREE.MathUtils.degToRad(roll);
         modelMesh.rotation.y = THREE.MathUtils.degToRad(pitch);

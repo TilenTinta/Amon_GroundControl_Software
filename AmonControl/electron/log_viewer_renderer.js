@@ -176,39 +176,51 @@ function isInRange(value, min, max) {
   return !Number.isFinite(value) || (value >= min && value <= max);
 }
 
-function isValidLogRow(row) {
+function hasValidTimestamp(row) {
   if (!Number.isFinite(row.timestamp)) return false;
-  if (!isInRange(row.servo_xp, -180, 180)) return false;
-  if (!isInRange(row.servo_xn, -180, 180)) return false;
-  if (!isInRange(row.servo_yp, -180, 180)) return false;
-  if (!isInRange(row.servo_yn, -180, 180)) return false;
-  if (!isInRange(row.nmpc_solver_time, 0, 1000000)) return false;
-  if (!isInRange(row.nmpc_solve_status, -10000, 10000)) return false;
-  if (!isInRange(row.nmpc_last_qp_iter, -10000, 10000)) return false;
-  if (!isInRange(row.nmpc_last_qp_status, -10000, 10000)) return false;
-  if (!isInRange(row.heading_deg, -360, 360)) return false;
-  if (!isInRange(row.pitch, -360, 360)) return false;
-  if (!isInRange(row.roll, -360, 360)) return false;
-  if (!isInRange(row.yaw, -360, 360)) return false;
-  if (!isInRange(row.accel_x, -50, 50)) return false;
-  if (!isInRange(row.accel_y, -50, 50)) return false;
-  if (!isInRange(row.accel_z, -50, 50)) return false;
-  if (!isInRange(row.gyro_x, -5000, 5000)) return false;
-  if (!isInRange(row.gyro_y, -5000, 5000)) return false;
-  if (!isInRange(row.gyro_z, -5000, 5000)) return false;
-  if (!isInRange(row.quaternion_w, -1.1, 1.1)) return false;
-  if (!isInRange(row.quaternion_x, -1.1, 1.1)) return false;
-  if (!isInRange(row.quaternion_y, -1.1, 1.1)) return false;
-  if (!isInRange(row.quaternion_z, -1.1, 1.1)) return false;
-  if (!isInRange(row.height_tof_m_filtered, 0, 1000)) return false;
-  if (!isInRange(row.height_tof_mm, 0, 100000)) return false;
-  if (!isInRange(row.height_baro_m, 0, 10000)) return false;
-  if (!isInRange(row.battery_main_voltage, 0, 100000)) return false;
-  if (!isInRange(row.battery_edf_voltage, 0, 100000)) return false;
-  if (!isInRange(row.temperature, 0, 10000)) return false;
-  if (!isInRange(row.pressure, 30000, 120000)) return false;
-  if (!isInRange(row.humidity, 0, 100)) return false;
-  if (!isInRange(row.edf_percent, 0, 100)) return false;
+  return true;
+}
+
+function sanitizeRange(row, key, min, max) {
+  if (!Number.isFinite(row[key]) || row[key] < min || row[key] > max) {
+    row[key] = null;
+  }
+}
+
+function sanitizeLogRow(row) {
+  [
+    ["servo_xp", -180, 180],
+    ["servo_xn", -180, 180],
+    ["servo_yp", -180, 180],
+    ["servo_yn", -180, 180],
+    ["nmpc_solver_time", 0, 1000000],
+    ["nmpc_solve_status", -10000, 10000],
+    ["nmpc_last_qp_iter", -10000, 10000],
+    ["nmpc_last_qp_status", -10000, 10000],
+    ["heading_deg", -360, 360],
+    ["pitch", -360, 360],
+    ["roll", -360, 360],
+    ["yaw", -360, 360],
+    ["accel_x", -50, 50],
+    ["accel_y", -50, 50],
+    ["accel_z", -50, 50],
+    ["gyro_x", -5000, 5000],
+    ["gyro_y", -5000, 5000],
+    ["gyro_z", -5000, 5000],
+    ["quaternion_w", -1.1, 1.1],
+    ["quaternion_x", -1.1, 1.1],
+    ["quaternion_y", -1.1, 1.1],
+    ["quaternion_z", -1.1, 1.1],
+    ["height_tof_m_filtered", 0, 1000],
+    ["height_tof_mm", 0, 100000],
+    ["height_baro_m", 0, 10000],
+    ["battery_main_voltage", 0, 100000],
+    ["battery_edf_voltage", 0, 100000],
+    ["temperature", 0, 10000],
+    ["pressure", 30000, 120000],
+    ["humidity", 0, 100],
+    ["edf_percent", 0, 100],
+  ].forEach(([key, min, max]) => sanitizeRange(row, key, min, max));
   return true;
 }
 
@@ -240,10 +252,11 @@ function buildDataset(csvText) {
   const validRows = [];
   for (const row of dataRows) {
     const previousRow = validRows[validRows.length - 1];
-    if (!isValidLogRow(row) || !hasContinuousTimestamp(row, previousRow)) {
+    if (!hasValidTimestamp(row) || !hasContinuousTimestamp(row, previousRow)) {
       if (validRows.length) break;
       continue;
     }
+    sanitizeLogRow(row);
     validRows.push(row);
   }
 
